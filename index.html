@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Datalog Overlay Tool (Clean Step Band)</title>
+<title>Datalog Overlay Tool (Final Clean Step Band)</title>
 
 <script src="./libs/chart.umd.min.js"></script>
 <script src="./libs/chartjs-plugin-zoom.min.js"></script>
@@ -14,13 +14,17 @@
   --panel:#222;
   --border:#444;
   --text:#eee;
+  --muted:#bbb;
+  --btn:#2d2d2d;
 }
+
+*{ box-sizing:border-box; }
 
 body{
   margin:0;
   background:var(--bg);
   color:var(--text);
-  font-family:Arial;
+  font-family:Arial, sans-serif;
 }
 
 .container{
@@ -31,22 +35,32 @@ body{
 }
 
 .left{
-  width:420px;
+  width:430px;
   background:var(--panel);
-  padding:10px;
+  border:1px solid #2b2b2b;
   border-radius:10px;
+  padding:10px;
   overflow:auto;
+  flex-shrink:0;
 }
 
 .right{
   flex:1;
+  min-width:0;
+  display:flex;
 }
 
 .row{
   display:flex;
-  gap:6px;
+  gap:8px;
   margin:6px 0;
   flex-wrap:wrap;
+  align-items:center;
+}
+
+label{
+  font-size:12px;
+  color:var(--muted);
 }
 
 input,select,button{
@@ -54,29 +68,122 @@ input,select,button{
   color:#eee;
   border:1px solid #444;
   border-radius:6px;
-  padding:5px;
+  padding:6px 8px;
+}
+
+button{
+  cursor:pointer;
+  background:var(--btn);
+}
+
+button:hover{
+  filter:brightness(1.08);
+}
+
+.pill{
+  display:inline-block;
+  padding:3px 8px;
+  border:1px solid var(--border);
+  border-radius:999px;
+  font-size:12px;
+  color:var(--muted);
+  background:#1a1a1a;
+}
+
+details{
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:8px;
+  background:#1a1a1a;
+  margin-top:8px;
+}
+
+summary{
+  cursor:pointer;
+  font-weight:bold;
+}
+
+.mini{
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.45;
 }
 
 #chart{
-  width:100%;
-  height:100%;
+  width:100% !important;
+  height:100% !important;
+  display:block;
+  background:#fff !important;
 }
 
 .chartWrap{
+  position:relative;
+  width:100%;
   height:100%;
+  min-height:320px;
   background:#fff;
   border-radius:10px;
-  position:relative;
+  overflow:hidden;
+  border:1px solid #2b2b2b;
 }
 
 #cursorBox{
   position:absolute;
   right:10px;
   top:10px;
-  background:#000;
+  background:rgba(0,0,0,0.82);
   color:#fff;
-  font-size:12px;
+  font:12px Consolas, monospace;
+  padding:8px 10px;
+  border-radius:8px;
+  white-space:pre;
+  pointer-events:none;
+  max-width:580px;
+  max-height:72%;
+  overflow:auto;
+}
+
+#debugBox,
+#fileList,
+#ySelect{
+  border:1px solid var(--border);
+  border-radius:8px;
   padding:6px;
+  background:#0f0f0f;
+}
+
+#debugBox{
+  white-space:pre-wrap;
+  font:12px Consolas, monospace;
+  color:var(--muted);
+  min-height:60px;
+}
+
+#fileList{
+  max-height:140px;
+  overflow:auto;
+}
+
+#ySelect{
+  max-height:220px;
+  overflow:auto;
+}
+
+.chkline{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:4px 0;
+  word-break:break-word;
+}
+
+.chkline input{
+  transform:scale(1.05);
+}
+
+.subtle{
+  font-size:11px;
+  color:#999;
 }
 </style>
 </head>
@@ -84,243 +191,725 @@ input,select,button{
 <body>
 <div class="container">
 
-<div class="left">
+  <div class="left">
+    <div class="row">
+      <input type="file" id="fileInput" multiple accept=".txt,.log" onchange="handleFiles(this.files)">
+    </div>
 
-<input type="file" multiple onchange="handleFiles(this.files)">
+    <div class="row">
+      <span class="pill" id="stats">Files=0 | Rows=0 | Cols=0</span>
+      <span class="pill" id="libcheck">Chart: ?</span>
+    </div>
 
-<div class="row">
-<select id="xMode" onchange="draw()">
-<option value="align">align</option>
-<option value="absolute">absolute</option>
-</select>
-</div>
+    <details open>
+      <summary>解析結果 / Debug</summary>
+      <div class="mini">會列出每個檔案的 rows / steps / header。若 rows=0，通常是表頭或資料格式未匹配。</div>
+      <div id="debugBox">（尚未選檔）</div>
+    </details>
 
-<div class="row">
-<label><input type="checkbox" id="showStepBands" checked onchange="draw()">step區塊</label>
-<label><input type="checkbox" id="showSteps" checked onchange="draw()">step文字</label>
-</div>
+    <details open>
+      <summary>載入檔案清單</summary>
+      <div class="mini">可勾選要疊哪些檔案。</div>
+      <div id="fileList"></div>
+    </details>
 
-<div id="debugBox"></div>
+    <div class="row">
+      <label>X 模式</label>
+      <select id="xMode" onchange="draw()">
+        <option value="align">align（起點=0）</option>
+        <option value="absolute">absolute（Start + offset）</option>
+      </select>
+    </div>
 
-</div>
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="showStepBands" checked onchange="draw()">
+        顯示 Step 顏色區塊
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="showSteps" checked onchange="draw()">
+        顯示 Step 文字
+      </label>
+    </div>
 
-<div class="right">
-<div class="chartWrap">
-<canvas id="chart"></canvas>
-<div id="cursorBox">Move mouse</div>
-</div>
-</div>
+    <div class="row">
+      <label>區塊透明度</label>
+      <input id="bandAlpha" type="number" min="0" max="1" step="0.02" value="0.12" style="width:80px;" onchange="draw()">
+    </div>
+
+    <div class="row">
+      <button type="button" onclick="draw()">🔄 重新繪圖</button>
+      <button type="button" onclick="resetZoomSafe()">↩ Reset Zoom</button>
+    </div>
+
+    <details open>
+      <summary>Y 欄位選擇</summary>
+      <div class="row">
+        <button type="button" onclick="selectAllY(); draw();">全選</button>
+        <button type="button" onclick="clearAllY(); draw();">全取消</button>
+      </div>
+      <div class="row">
+        <button type="button" onclick="selectGroup('flow'); draw();">Flow</button>
+        <button type="button" onclick="selectGroup('mfc'); draw();">MFC</button>
+        <button type="button" onclick="selectGroup('pressure'); draw();">Pressure</button>
+        <button type="button" onclick="selectGroup('temp'); draw();">Temp</button>
+      </div>
+      <div id="ySelect"></div>
+    </details>
+
+    <details open>
+      <summary>效能設定</summary>
+      <div class="row">
+        <label>抽樣 step</label>
+        <input id="sampleStep" type="number" min="1" step="1" value="3" style="width:80px;" onchange="draw()">
+      </div>
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="fastMode" checked onchange="draw()">
+          Fast mode（不畫點 / 限 ticks）
+        </label>
+      </div>
+    </details>
+
+    <div class="mini" style="margin-top:8px;">
+      Ctrl + 滾輪縮放、Ctrl + 拖曳縮放、Alt + 拖曳平移。<br>
+      Step 區塊會以第一個啟用檔案的 step 當背景基準。
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="chartWrap">
+      <canvas id="chart"></canvas>
+      <div id="cursorBox">Move mouse over chart...</div>
+    </div>
+  </div>
 
 </div>
 
 <script>
+let FILE_DATA = [];
+let chart = null;
+let ALL_KEYS = [];
 
-let FILE_DATA=[];
-let chart=null;
+const $ = (id) => document.getElementById(id);
+
+(function init(){
+  let ok = false;
+  try{
+    ok = (typeof Chart === "function");
+  }catch(e){
+    ok = false;
+  }
+  $("libcheck").textContent = "Chart: " + (ok ? "OK" : "NOT LOADED");
+})();
 
 function parseStartEpoch(text){
-  const m=text.match(/Start\s*:\s*(\d+\/\d+\/\d+)\s+(\d+:\d+:\d+)/);
+  const m = String(text || "").match(/Start\s*:\s*(\d{4}\/\d{1,2}\/\d{1,2})\s+(\d{1,2}:\d{1,2}:\d{1,2})/i);
   if(!m) return null;
-  return new Date(m[1]+" "+m[2]).getTime()/1000;
+  const dt = new Date(m[1] + " " + m[2]);
+  if(Number.isNaN(dt.getTime())) return null;
+  return Math.floor(dt.getTime() / 1000);
 }
 
 function hmsToSec(s){
-  let p=s.split(":");
-  return p[0]*3600+p[1]*60+p[2]*1;
+  const p = String(s || "").split(":").map(Number);
+  return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
+}
+
+function secToHMS(sec){
+  sec = Math.max(0, Math.floor(Number(sec) || 0));
+  const hh = Math.floor(sec / 3600);
+  const mm = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
+}
+
+function epochToDateTime(epoch){
+  const d = new Date(Number(epoch) * 1000);
+  const Y = d.getFullYear();
+  const M = String(d.getMonth() + 1).padStart(2,"0");
+  const D = String(d.getDate()).padStart(2,"0");
+  const h = String(d.getHours()).padStart(2,"0");
+  const m = String(d.getMinutes()).padStart(2,"0");
+  const s = String(d.getSeconds()).padStart(2,"0");
+  return `${Y}/${M}/${D} ${h}:${m}:${s}`;
+}
+
+function fileBaseName(name){
+  return String(name || "").replace(/\.[^.]+$/, "");
+}
+
+function downsample(arr, step){
+  step = Math.max(1, Number(step) || 1);
+  if(step <= 1) return arr;
+  const out = [];
+  for(let i = 0; i < arr.length; i += step){
+    out.push(arr[i]);
+  }
+  return out;
 }
 
 function parse(text){
-  let lines=text.split(/\n/);
-  let header=null;
-  let rows=[];
-  let steps=[];
-  let pending=null;
+  const lines = String(text || "").split(/\r?\n/);
+  let header = null;
+  const rows = [];
+  const steps = [];
+  let pending = null;
 
   for(let raw of lines){
-    let line=raw.trim();
+    const line = raw.trim();
+    if(!line) continue;
 
-    // ✅ 最強 Step parser（重點）
-    let stepMatch=line.match(/PM_Step\s*[:=>]+\s*(.+)$/i);
+    // 抓 Step：支援 PM_Step : XXX / PM_Step => XXX / PM Step = XXX
+    const stepMatch = line.match(/PM[_\s]*Step\s*[:=>]+\s*(.+)$/i);
     if(stepMatch){
-      pending=stepMatch[1].trim();
+      pending = stepMatch[1].trim();
     }
 
-    if(!header && /^Time/.test(line)){
-      header=line.split(/\s+/);
+    // 抓表頭
+    if(!header && /^\s*Time\b/i.test(line)){
+      header = line.split(/\s+/).map(x => x.trim()).filter(Boolean);
       continue;
     }
 
     if(!header) continue;
     if(!/^\d{1,2}:\d{1,2}:\d{1,2}/.test(line)) continue;
 
-    let parts=line.split(/\s+/);
-    let obj={};
-    obj.t=hmsToSec(parts[0]);
+    const parts = line.split(/\s+/).filter(Boolean);
+    if(parts.length < header.length) continue;
+
+    const obj = {};
+    obj.t = hmsToSec(parts[0]);
 
     if(pending){
-      steps.push({t:obj.t,name:pending});
-      pending=null;
+      const last = steps[steps.length - 1];
+      if(!last || last.name !== pending){
+        steps.push({ t: obj.t, name: pending });
+      }
+      pending = null;
     }
 
-    for(let i=1;i<header.length;i++){
-      obj[header[i]]=parseFloat(parts[i])||null;
+    for(let i = 1; i < header.length; i++){
+      const key = header[i];
+      const num = parseFloat(parts[i]);
+      obj[key] = Number.isFinite(num) ? num : null;
     }
 
     rows.push(obj);
   }
 
-  return {rows,steps};
+  return { rows, steps, header: header || [] };
 }
-function handleFiles(files){
 
-  FILE_DATA=[];
-  let debug=[];
+function buildFileList(){
+  const box = $("fileList");
+  box.innerHTML = "";
 
-  for(let f of files){
+  FILE_DATA.forEach((f, idx) => {
+    const div = document.createElement("div");
+    div.className = "chkline";
 
-    let reader=new FileReader();
-
-    reader.onload=e=>{
-      let txt=e.target.result;
-
-      let parsed=parse(txt);
-      let start=parseStartEpoch(txt);
-
-      FILE_DATA.push({
-        name:f.name,
-        rows:parsed.rows,
-        steps:parsed.steps,
-        start:start,
-        enabled:true
-      });
-
-      debug.push(`${f.name} rows=${parsed.rows.length} steps=${parsed.steps.length}`);
-
-      document.getElementById("debugBox").innerText=debug.join("\n");
-
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = f.enabled;
+    cb.onchange = () => {
+      f.enabled = cb.checked;
       draw();
-    }
+    };
 
-    reader.readAsText(f);
-  }
-}
+    const span = document.createElement("span");
+    span.textContent = `${f.name}${f.start ? ` (Start=${epochToDateTime(f.start)})` : ""}`;
 
-function draw(){
-
-if(!FILE_DATA.length) return;
-
-let datasets=[];
-let colors=["red","blue","green","orange"];
-
-let steps=[];
-
-let f=FILE_DATA[0];
-if(f.steps){
-steps=f.steps.map(s=>({x:s.t,name:s.name}));
-}
-
-for(let i=0;i<FILE_DATA.length;i++){
-
-  let file=FILE_DATA[i];
-
-  let data=file.rows.map(r=>({x:r.t,y:r.Chamber_Flow||0}));
-
-  datasets.push({
-    label:file.name,
-    data:data,
-    parsing:false,
-    borderColor:colors[i%colors.length],
-    pointRadius:0
+    div.appendChild(cb);
+    div.appendChild(span);
+    box.appendChild(div);
   });
 }
 
-if(chart) chart.destroy();
+function buildYList(){
+  const yBox = $("ySelect");
+  yBox.innerHTML = "";
 
-chart=new Chart(chartCanvas(),{
-type:"line",
-data:{datasets},
-plugins:[stepBandPlugin,stepOverlayPlugin],
-options:{
-responsive:true,
-scales:{
-x:{type:"linear"},
-y:{type:"linear"}
-},
-plugins:{
-stepBandPlugin:{
-enabled:document.getElementById("showStepBands").checked,
-steps:steps
-},
-stepOverlayPlugin:{
-enabled:document.getElementById("showSteps").checked,
-steps:steps
-}
-}
-}
-});
+  ALL_KEYS.forEach(k => {
+    const div = document.createElement("div");
+    div.className = "chkline";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = k;
+    cb.checked = /flow|mfc|pressure|temp|power|chamber/i.test(k);
+    cb.onchange = draw;
+
+    const span = document.createElement("span");
+    span.textContent = k;
+
+    div.appendChild(cb);
+    div.appendChild(span);
+    yBox.appendChild(div);
+  });
 }
 
-/* ✅ step 區塊 */
-const stepBandPlugin={
-id:"stepBandPlugin",
-beforeDatasetsDraw(chart,args,opt){
-
-if(!opt.enabled) return;
-
-let {ctx,chartArea,scales}=chart;
-let x=scales.x;
-let steps=opt.steps;
-
-ctx.save();
-
-for(let i=0;i<steps.length;i++){
-let s=steps[i];
-let next=steps[i+1];
-
-let x1=x.getPixelForValue(s.x);
-let x2=next?x.getPixelForValue(next.x):chartArea.right;
-
-ctx.fillStyle=`rgba(${(i*50)%255},150,200,0.15)`;
-ctx.fillRect(x1,chartArea.top,x2-x1,chartArea.bottom-chartArea.top);
+function getSelectedY(){
+  return [...document.querySelectorAll("#ySelect input[type=checkbox]:checked")].map(x => x.value);
 }
 
-ctx.restore();
+function selectAllY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = true);
 }
+
+function clearAllY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = false);
+}
+
+function selectGroup(keyword){
+  const k = String(keyword || "").toLowerCase();
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => {
+    cb.checked = cb.value.toLowerCase().includes(k);
+  });
+}
+
+function resetZoomSafe(){
+  if(chart && typeof chart.resetZoom === "function"){
+    chart.resetZoom();
+  }
+}
+
+/* Step 色塊顏色 */
+function getBandColor(i, alpha){
+  const palette = [
+    [255,99,132],
+    [54,162,235],
+    [255,206,86],
+    [75,192,192],
+    [153,102,255],
+    [255,159,64],
+    [46,204,113],
+    [231,76,60],
+    [52,152,219],
+    [241,196,15]
+  ];
+  const c = palette[i % palette.length];
+  return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
+}
+
+/* Step 顏色區塊 */
+const stepBandPlugin = {
+  id: "stepBandPlugin",
+  beforeDatasetsDraw(chart, args, opt){
+    if(!opt || !opt.enabled) return;
+    const steps = opt.steps || [];
+    if(!steps.length) return;
+
+    const { ctx, chartArea, scales } = chart;
+    const x = scales.x;
+    if(!x || !chartArea) return;
+
+    const alpha = Number(opt.alpha);
+    const bandAlpha = Number.isFinite(alpha) ? alpha : 0.12;
+
+    ctx.save();
+
+    for(let i = 0; i < steps.length; i++){
+      const s = steps[i];
+      const next = steps[i + 1];
+
+      const x1 = x.getPixelForValue(s.x);
+      const x2 = next ? x.getPixelForValue(next.x) : chartArea.right;
+
+      const left = Math.max(chartArea.left, Math.min(x1, x2));
+      const right = Math.min(chartArea.right, Math.max(x1, x2));
+      const w = right - left;
+
+      if(w <= 0) continue;
+
+      ctx.fillStyle = getBandColor(i, bandAlpha);
+      ctx.fillRect(left, chartArea.top, w, chartArea.bottom - chartArea.top);
+    }
+
+    ctx.restore();
+  }
 };
 
-/* ✅ step 文字 */
-const stepOverlayPlugin={
-id:"stepOverlayPlugin",
-afterDraw(chart,args,opt){
+/* Step 文字 + 分隔線 */
+const stepOverlayPlugin = {
+  id: "stepOverlayPlugin",
+  afterDraw(chart, args, opt){
+    if(!opt || !opt.enabled) return;
+    const steps = opt.steps || [];
+    if(!steps.length) return;
 
-if(!opt.enabled) return;
+    const { ctx, chartArea, scales } = chart;
+    const x = scales.x;
+    if(!x || !chartArea) return;
 
-let {ctx,chartArea,scales}=chart;
-let x=scales.x;
+    ctx.save();
+    ctx.strokeStyle = "rgba(80,80,80,0.45)";
+    ctx.fillStyle = "#222";
+    ctx.lineWidth = 1;
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
 
-ctx.save();
-ctx.fillStyle="#000";
-ctx.textAlign="center";
+    for(let i = 0; i < steps.length; i++){
+      const px = x.getPixelForValue(steps[i].x);
+      if(px < chartArea.left || px > chartArea.right) continue;
 
-for(let i=0;i<opt.steps.length;i++){
+      ctx.beginPath();
+      ctx.moveTo(px, chartArea.top);
+      ctx.lineTo(px, chartArea.bottom);
+      ctx.stroke();
+    }
 
-let s=opt.steps[i];
-let next=opt.steps[i+1];
+    for(let i = 0; i < steps.length; i++){
+      const x1 = x.getPixelForValue(steps[i].x);
+      const x2 = (i < steps.length - 1) ? x.getPixelForValue(steps[i + 1].x) : chartArea.right;
+      const mid = (x1 + x2) / 2;
+      if(mid < chartArea.left || mid > chartArea.right) continue;
+      ctx.fillText(steps[i].name, mid, chartArea.top + 6);
+    }
 
-let x1=x.getPixelForValue(s.x);
-let x2=next?x.getPixelForValue(next.x):chartArea.right;
-
-ctx.fillText(s.name,(x1+x2)/2,chartArea.top+4);
-}
-
-ctx.restore();
-}
+    ctx.restore();
+  }
 };
+``function chartCanvas(){
+  return document.getElementById("chart");
+}
 
-function chartCanvas(){
-return document.getElementById("chart");
+async function handleFiles(files){
+  const list = [...(files || [])];
+  if(!list.length) return;
+
+  FILE_DATA = [];
+  ALL_KEYS = [];
+
+  const debug = [];
+  let totalRows = 0;
+  let maxCols = 0;
+
+  $("debugBox").textContent = "讀取中...\n";
+
+  for(const f of list){
+    const text = await f.text();
+    const parsed = parse(text);
+    const start = parseStartEpoch(text);
+
+    debug.push(`${f.name} rows=${parsed.rows.length} steps=${parsed.steps.length} header=${parsed.header.length}${start ? ` start=${epochToDateTime(start)}` : ""}`);
+
+    if(parsed.header.length && parsed.rows.length){
+      parsed.header.forEach(k => {
+        if(k !== "Time" && !ALL_KEYS.includes(k)){
+          ALL_KEYS.push(k);
+        }
+      });
+
+      FILE_DATA.push({
+        name: f.name,
+        base: fileBaseName(f.name),
+        rows: parsed.rows,
+        steps: parsed.steps,
+        header: parsed.header,
+        start: start,
+        enabled: true
+      });
+
+      totalRows += parsed.rows.length;
+      maxCols = Math.max(maxCols, parsed.header.length);
+    }
+  }
+
+  $("debugBox").textContent = debug.join("\n");
+  $("stats").textContent = `Files=${FILE_DATA.length} | Rows=${totalRows} | Cols=${maxCols}`;
+
+  if(!FILE_DATA.length){
+    $("cursorBox").textContent = "No parsed data";
+    return;
+  }
+
+  ALL_KEYS.sort((a, b) => a.localeCompare(b));
+  buildFileList();
+  buildYList();
+
+  if(totalRows >= 4000){
+    $("sampleStep").value = 10;
+  }else if(totalRows >= 1200){
+    $("sampleStep").value = 5;
+  }else{
+    $("sampleStep").value = 3;
+  }
+
+  draw();
+}
+
+function draw(){
+  if(typeof Chart !== "function"){
+    $("debugBox").textContent = "❌ Chart.js 未載入，請確認 ./libs/chart.umd.min.js";
+    return;
+  }
+
+  const enabledFiles = FILE_DATA.filter(f => f.enabled);
+  if(!enabledFiles.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No file enabled";
+    return;
+  }
+
+  let yKeys = getSelectedY();
+
+  // 若沒有勾 Y，則自動抓第一個欄位
+  if(!yKeys.length && enabledFiles[0] && enabledFiles[0].rows[0]){
+    const autoKey = Object.keys(enabledFiles[0].rows[0]).find(k => k !== "t");
+    if(autoKey) yKeys = [autoKey];
+  }
+
+  if(!yKeys.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No Y key selected";
+    return;
+  }
+
+  const mode = $("xMode").value;
+  const fast = $("fastMode").checked;
+  const sampleStep = Math.max(1, Number($("sampleStep").value || 1));
+
+  const colors = [
+    "#ff3b30","#0a84ff","#34c759","#ff9f0a",
+    "#64d2ff","#ffd60a","#bf5af2","#30d158",
+    "#60a5fa","#34d399","#f59e0b","#a78bfa",
+    "#ec4899","#22c55e","#ef4444","#14b8a6"
+  ];
+
+  const datasets = [];
+  let colorIdx = 0;
+
+  const refFile = enabledFiles[0];
+  let overlaySteps = [];
+
+  if(refFile && refFile.steps && refFile.steps.length){
+    overlaySteps = refFile.steps.map(s => {
+      let x;
+      if(mode === "absolute" && refFile.start){
+        x = refFile.start + s.t;
+      }else{
+        x = s.t;
+      }
+      return { x, name: s.name };
+    });
+  }
+
+  for(const file of enabledFiles){
+    const reduced = downsample(file.rows, sampleStep);
+
+    for(const key of yKeys){
+      const pts = [];
+
+      for(const r of reduced){
+        const y = (typeof r[key] === "number") ? r[key] : null;
+        if(y === null) continue;
+
+        let x;
+        if(mode === "absolute" && file.start){
+          x = file.start + r.t;
+        }else{
+          x = r.t;
+        }
+
+        pts.push({ x, y });
+      }
+
+      if(!pts.length) continue;
+
+      datasets.push({
+        label: `${file.base} | ${key}`,
+        _fileBase: file.base,
+        _key: key,
+        data: pts,
+        parsing: false,
+        borderColor: colors[colorIdx % colors.length],
+        backgroundColor: colors[colorIdx % colors.length],
+        borderWidth: 1.8,
+        pointRadius: fast ? 0 : 1,
+        pointHoverRadius: 3,
+        pointHitRadius: 10,
+        tension: 0.1,
+        spanGaps: true
+      });
+      colorIdx++;
+    }
+  }
+
+  if(!datasets.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No drawable data";
+    return;
+  }
+
+  if(chart){
+    chart.destroy();
+    chart = null;
+  }
+
+  try{
+    if(window.ChartZoom){
+      Chart.register(window.ChartZoom);
+    }
+    if(window["chartjs-plugin-zoom"]){
+      Chart.register(window["chartjs-plugin-zoom"]);
+    }
+  }catch(e){}
+
+  chart = new Chart(chartCanvas(), {
+    type: "line",
+    data: { datasets },
+    plugins: [stepBandPlugin, stepOverlayPlugin],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: fast ? false : { duration: 220 },
+      normalized: true,
+      interaction: {
+        mode: "nearest",
+        intersect: false
+      },
+      scales: {
+        x: {
+          type: "linear",
+          ticks: {
+            maxTicksLimit: fast ? 12 : 18,
+            callback: (v) => {
+              v = Number(v);
+              if(mode === "absolute"){
+                return epochToDateTime(v);
+              }
+              return secToHMS(v);
+            }
+          },
+          title: {
+            display: true,
+            text: mode === "absolute" ? "Absolute Time" : "Time (HH:MM:SS)"
+          }
+        },
+        y: {
+          type: "linear",
+          title: {
+            display: true,
+            text: "Value"
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            font: { size: 10 },
+            boxWidth: 14
+          }
+        },
+        tooltip: {
+          enabled: true,
+          mode: "nearest",
+          intersect: false
+        },
+        stepBandPlugin: {
+          enabled: $("showStepBands").checked,
+          steps: overlaySteps,
+          alpha: Number($("bandAlpha").value || 0.12)
+        },
+        stepOverlayPlugin: {
+          enabled: $("showSteps").checked,
+          steps: overlaySteps
+        },
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: "x",
+            modifierKey: "alt"
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              modifierKey: "ctrl"
+            },
+            drag: {
+              enabled: true,
+              modifierKey: "ctrl",
+              borderWidth: 1
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: "x"
+          }
+        }
+      }
+    }
+  });
+
+  attachCursorBox(mode);
+}
+
+function nearestPointByX(arr, x){
+  let lo = 0;
+  let hi = arr.length - 1;
+
+  while(lo < hi){
+    const mid = (lo + hi) >> 1;
+    if(arr[mid].x < x) lo = mid + 1;
+    else hi = mid;
+  }
+
+  let best = arr[lo];
+  if(lo > 0){
+    const prev = arr[lo - 1];
+    if(Math.abs(prev.x - x) < Math.abs(best.x - x)) best = prev;
+  }
+  return best;
+}
+
+function attachCursorBox(mode){
+  const box = $("cursorBox");
+  const canvas = $("chart");
+
+  canvas.onmousemove = (ev) => {
+    if(!chart) return;
+    const xScale = chart.scales.x;
+    if(!xScale) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const xVal = xScale.getValueForPixel(px);
+
+    const lines = [];
+    if(mode === "absolute"){
+      lines.push(`Time: ${epochToDateTime(xVal)}`);
+    }else{
+      lines.push(`Time: ${secToHMS(xVal)}`);
+    }
+
+    for(const ds of chart.data.datasets){
+      const arr = ds.data;
+      if(!arr || !arr.length) continue;
+      const p = nearestPointByX(arr, xVal);
+      if(p && Number.isFinite(p.y)){
+        lines.push(`${ds._fileBase} | ${ds._key}: ${p.y}`);
+      }
+    }
+
+    box.textContent = lines.slice(0, 24).join("\n");
+  };
+
+  canvas.onmouseleave = () => {
+    box.textContent = "Move mouse over chart...";
+  };
 }
 </script>
-
 </body>
 </html>
