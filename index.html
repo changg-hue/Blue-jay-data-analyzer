@@ -141,7 +141,12 @@
         <option value="absolute">絕對時間（Start + offset）</option>
         <option value="relative">相對時間（Time 欄 00:00:00）</option>
       </select>
-
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="showSteps" checked onchange="triggerDraw()">
+      顯示 Recipe Step
+  </label>
+      </div>
       <label>顯示日期</label>
       <select id="showDate" onchange="triggerDraw()">
         <option value="no">否</option>
@@ -488,13 +493,208 @@ function triggerDraw(){
    - relative: x = Time_s (顯示 HH:MM:SS)
 ========================= */
 function draw(){
-  const files = FILE_DATA.filter(f=>f.enabled);
+  const files = FILE_DATA.filter(f => f.enabled);
   const yKeys = getSelectedY();
 
-  if(!files.length || !yKeys.length){
-    if(chart){ chart.destroy(); chart=null; }
+  if (!files.length || !yKeys.length) {
+    if (chart) {
+      chart.destroy();
+      chart = null;
+    }
     $("cursorBox").textContent = "No data / No selection";
     return;
+  }
+
+  const mode = $("xMode").value;          // align / absolute / relative
+  const showDate = $("showDate").value;   // yes / no
+  const step = Math.max(1, Number($("step").value || 1));
+  const fast = $("fastMode").checked;
+
+  const yMin  = ($("ymin").value  === "") ? undefined : Number($("ymin").value);
+  const yMax  = ($("ymax").value  === "") ? undefined : Number($("ymax").value);
+  const y2Min = ($("y2min").value === "") ? undefined : Number($("y2min").value);
+  const y2Max = ($("y2max").value === "") ? undefined : Number($("y2max").value);
+
+  const colors = [
+    "#ff3b30","#0a84ff","#34c759","#ff9f0a",
+    "#64d2ff","#ffd60a","#bf5af2","#30d158",
+    "#60a5fa","#34d399","#f59e0b","#a78bfa"
+  ];
+
+  let colorIdx = 0;
+  const datasets = [];
+
+  // ===== Recipe Step overlay（以第一個啟用檔案為基準）=====
+  const refFile = files[0];
+  let overlaySteps = [];
+
+  if (refFile && refFile.steps && refFile.steps.length) {
+    overlaySteps = refFile.steps.map(s => {
+      let x;
+      if (mode === "align") {
+        x = s.t;
+      } else if (mode === "absolute" && refFile.startEpoch) {
+        x = refFile.startEpoch + s.t;
+      } else {
+        x = s.t;
+      }
+      return { x, name: s.name };
+    });
+  }
+
+  // ===== 建 datasets =====
+  for (const f of files) {
+    const reduced = downsample(f.rows, step);
+
+    for (const k of yKeys) {
+      const pts = [];
+
+      for (const r of reduced) {
+        const y = (typeof r[k] === "number") ? r[k] : null;
+        if (y === null) continue;
+
+        let x;
+        if (mode === "align") {
+          x = r.Time_s;
+        } else if (mode === "absolute" && f.startEpoch) {
+          x = f.startEpoch + r.Time_s;
+        } else {
+          x = r.Time_s;
+        }
+
+        pts.push({ x, y });
+      }
+
+      const disp = displayKey(k);
+
+      datasets.push({
+        label: `${f.base} | ${disp}`,
+        _fileBase: f.base,
+        _origKey: k,
+        _dispKey: disp,
+        data: pts,
+        parsing: false,
+        borderColor: colors[colorIdx % colors.length],
+        borderWidth: 2,
+        pointRadius: fast ? 0 : 1,
+        pointHitRadius: 12,
+        pointHoverRadius: 3,
+        tension: 0.2,
+        spanGaps: true,
+        yAxisID: /mfc|actflw|flow/i.test(k) ? "y2" : "y"
+      });
+
+      colorIdx++;
+    }
+  }
+
+  if (chart) chart.destroy();
+
+  // 安全註冊 zoom plugin（有載入才註冊）
+  try {
+    if (window.ChartZoom) Chart.register(window.ChartZoom);
+    if (window["chartjs-plugin-zoom"]) Chart.register(window["chartjs-plugin-zoom"]);
+  } catch (e) {}
+
+  chart = new Chart($("chart"), {
+    type: "line",
+    data: { datasets },
+
+    plugins: [stepOverlayPlugin],
+
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: fast ? false : { duration: 250 },
+      interaction: { mode: "nearest", intersect: false },
+
+      scales: {
+        x: {
+          type: "linear",
+          ticks: {
+            maxTicksLimit: fast ? 12 : 18,
+            callback: (v) => {
+              v = Number(v);
+
+              if (mode === "absolute") {
+                if (showDate === "yes") return epochToDateTime(v);
+                const d = new Date(v * 1000);
+                return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+              }
+
+              // align / relative
+              return secToHMS(v);
+            }
+          },
+          title: {
+            display: true,
+            text: (mode === "absolute") ? "Absolute Time" : "Time (HH:MM:SS)"
+          }
+        },
+
+        y: {
+          type: "linear",
+          position: "left",
+          min: yMin,
+          max: yMax,
+          title: {
+            display: true,
+            text: "Left"
+          }
+        },
+
+        y2: {
+          type: "linear",
+          position: "right",
+          min: y2Min,
+          max: y2Max,
+          grid: {
+            drawOnChartArea: false
+          },
+          title: {
+            display: true,
+            text: "Right"
+          }
+        }
+      },
+
+      plugins: {
+        legend: {
+          labels: {
+            font: { size: 10 }
+          }
+        },
+
+        stepOverlayPlugin: {
+          enabled: $("showSteps") ? $("showSteps").checked : false,
+          steps: overlaySteps
+        },
+
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: "x",
+            modifierKey: "alt"
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              modifierKey: "ctrl"
+            },
+            drag: {
+              enabled: true,
+              modifierKey: "ctrl",
+              borderWidth: 1
+            },
+            mode: "x"
+          }
+        }
+      }
+    }
+  });
+
+  attachCursorBox(mode, showDate);
+}
   }
 
   const mode = $("xMode").value;
