@@ -1,177 +1,722 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Datalog Overlay Tool</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Datalog Overlay Tool (Final + Align + Rename MFC + Step)</title>
 
-<script src="./libs/chart.umd.min.js"></script>
-<script src="./libs/chartjs-plugin-zoom.min.js"></script>
+  <script src="./libs/chart.umd.min.js"></script>
+  <script src="./libs/chartjs-plugin-zoom.min.js"></script>
 
-<style>
-body{margin:0;font-family:Arial;background:#111;color:#eee;}
-.container{display:flex;height:100vh;gap:10px;padding:10px;}
-.left{width:420px;background:#222;padding:10px;overflow:auto;}
-.right{flex:1;}
-.row{display:flex;gap:8px;margin:6px 0;}
-.chartWrap{height:80vh;background:#fff;}
-</style>
+  <style>
+    :root{
+      --bg:#111;
+      --panel:#222;
+      --border:#444;
+      --text:#eee;
+      --muted:#bbb;
+      --btn:#2d2d2d;
+    }
+
+    body{
+      margin:0;
+      font-family:Arial, sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    .container{
+      display:flex;
+      height:100vh;
+      gap:10px;
+      padding:10px;
+      box-sizing:border-box;
+    }
+
+    .left{
+      width:430px;
+      background:var(--panel);
+      border:1px solid #2b2b2b;
+      border-radius:10px;
+      padding:10px;
+      overflow:auto;
+      box-sizing:border-box;
+    }
+
+    .right{
+      flex:1;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+      margin:6px 0;
+    }
+
+    label{
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    input, select, button{
+      background:#1a1a1a;
+      color:var(--text);
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:6px 8px;
+    }
+
+    button{
+      cursor:pointer;
+      background:var(--btn);
+    }
+
+    button:hover{
+      filter:brightness(1.1);
+    }
+
+    .pill{
+      display:inline-block;
+      padding:3px 8px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      font-size:12px;
+      color:var(--muted);
+      background:#1a1a1a;
+    }
+
+    details{
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:8px;
+      background:#1a1a1a;
+      margin-top:8px;
+    }
+
+    summary{
+      cursor:pointer;
+      font-weight:bold;
+    }
+
+    .mini{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.4;
+    }
+
+    .chkline{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      margin:3px 0;
+    }
+
+    .chkline input{
+      transform:scale(1.1);
+    }
+
+    #fileList{
+      max-height:160px;
+      overflow-y:auto;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:6px;
+      background:#0f0f0f;
+    }
+
+    #ySelect{
+      height:190px;
+      overflow-y:auto;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:6px;
+      background:#0f0f0f;
+    }
+
+    #debugBox{
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:6px;
+      background:#0f0f0f;
+      color:var(--muted);
+      font:12px Consolas, ui-monospace, monospace;
+      white-space:pre-wrap;
+    }
+
+    #nameMapBox{
+      max-height:220px;
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:6px;
+      background:#0f0f0f;
+    }
+
+    .maprow{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:8px;
+      align-items:center;
+      margin:4px 0;
+    }
+
+    .maprow span{
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .maprow input{
+      width:100%;
+      box-sizing:border-box;
+    }
+
+    .chartWrap{
+      flex:1;
+      background:#fff;
+      border-radius:10px;
+      border:1px solid #2b2b2b;
+      overflow:hidden;
+      position:relative;
+      min-height:320px;
+    }
+
+    #chart{
+      width:100% !important;
+      height:100% !important;
+      display:block;
+      background:#fff !important;
+    }
+
+    #cursorBox{
+      position:absolute;
+      top:10px;
+      right:10px;
+      background:rgba(0,0,0,0.8);
+      color:#fff;
+      border:1px solid rgba(255,255,255,0.18);
+      border-radius:10px;
+      padding:8px 10px;
+      font:12px Consolas, ui-monospace, monospace;
+      white-space:pre;
+      pointer-events:none;
+      max-width:560px;
+    }
+  </style>
 </head>
-
 <body>
 <div class="container">
 
-<div class="left">
-<input type="file" multiple onchange="handleFiles(this.files)">
+  <div class="left">
+    <div class="row">
+      <input type="file" id="fileInput" multiple accept=".txt,.log" onchange="handleFiles(this.files)">
+    </div>
 
-<div class="row">
-<label>X 模式</label>
-<select id="xMode">
-<option value="align">align</option>
-<option value="absolute">absolute</option>
-<option value="relative">relative</option>
-</select>
-</div>
+    <div class="row">
+      <span class="pill" id="stats">Files=0 | Rows=0 | Cols=0</span>
+      <span class="pill" id="libcheck">Chart: ?</span>
+    </div>
 
-<div class="row">
-<input type="checkbox" id="showSteps" checked>
-顯示 STEP
-</div>
+    <details open>
+      <summary>解析結果 / Debug（不用開 F12）</summary>
+      <div class="mini">會列出每個檔案 header / rows / steps；若 header=0 代表沒抓到表頭。</div>
+      <div id="debugBox">（尚未選檔）</div>
+    </details>
 
-<button onclick="draw()">重畫</button>
+    <details open>
+      <summary>載入檔案清單（可勾選要疊哪些檔）</summary>
+      <div class="mini">多檔疊圖時，建議先勾 2~3 檔 + step=3~10。</div>
+      <div id="fileList"></div>
+    </details>
 
-<div id="debugBox"></div>
+    <div class="row">
+      <label>X 模式</label>
+      <select id="xMode" onchange="triggerDraw()">
+        <option value="align">✅ 疊圖對齊（起點=0，推薦比較用）</option>
+        <option value="absolute">絕對時間（Start + offset）</option>
+        <option value="relative">相對時間（Time 欄 00:00:00）</option>
+      </select>
+    </div>
 
-</div>
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="showSteps" checked onchange="triggerDraw()">
+        顯示 Recipe Step
+      </label>
+    </div>
 
-<div class="right">
-<div class="chartWrap">
-<canvas id="chart"></canvas>
-</div>
-</div>
+    <div class="row">
+      <label>顯示日期</label>
+      <select id="showDate" onchange="triggerDraw()">
+        <option value="no">否</option>
+        <option value="yes">是（YYYY/MM/DD HH:MM:SS）</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button type="button" onclick="draw()">🔄 重新繪圖</button>
+      <button type="button" onclick="autoScale()">Auto Scale</button>
+      <button type="button" onclick="resetZoom()">↩ Reset Zoom</button>
+      <label style="display:flex;gap:6px;align-items:center;">
+        <input type="checkbox" id="autoDraw" checked>
+        自動更新
+      </label>
+    </div>
+
+    <details open>
+      <summary>Y欄位選擇</summary>
+
+      <div class="row">
+        <button type="button" onclick="selectAllY(); triggerDraw();">✅ 全選</button>
+        <button type="button" onclick="clearAllY(); triggerDraw();">❌ 全取消</button>
+        <button type="button" onclick="invertY(); triggerDraw();">🔄 反轉</button>
+      </div>
+
+      <div class="row">
+        <button type="button" onclick="selectGroup('MFC'); triggerDraw();">MFC</button>
+        <button type="button" onclick="selectGroup('Pressure'); triggerDraw();">Pressure</button>
+        <button type="button" onclick="selectGroup('Temp'); triggerDraw();">Temp</button>
+      </div>
+
+      <div id="ySelect"></div>
+    </details>
+
+    <details open>
+      <summary>自定義 MFC 名稱（Legend / Cursor 會套用）</summary>
+      <div class="mini">輸入後按「套用名稱」。支援 localStorage 記住設定。</div>
+
+      <div class="row">
+        <button type="button" onclick="applyNameMap()">✅ 套用名稱</button>
+        <button type="button" onclick="clearNameMap()">🧹 清除所有自定義</button>
+      </div>
+
+      <div id="nameMapBox"></div>
+    </details>
+
+    <details>
+      <summary>Y軸設定（可留空=自動）</summary>
+      <div class="row">
+        <label>Left(min/max)</label>
+        <input id="ymin" type="number" placeholder="min" onchange="triggerDraw()">
+        <input id="ymax" type="number" placeholder="max" onchange="triggerDraw()">
+      </div>
+
+      <div class="row">
+        <label>Right(min/max)</label>
+        <input id="y2min" type="number" placeholder="min" onchange="triggerDraw()">
+        <input id="y2max" type="number" placeholder="max" onchange="triggerDraw()">
+      </div>
+    </details>
+
+    <details open>
+      <summary>效能設定</summary>
+      <div class="row">
+        <label>下採樣（每N點取1）</label>
+        <input id="step" type="number" min="1" step="1" value="3" style="width:70px;" onchange="triggerDraw()">
+      </div>
+
+      <div class="row">
+        <label><input type="checkbox" id="fastMode" checked onchange="triggerDraw()"> Fast mode（關動畫/不畫點/限制ticks）</label>
+      </div>
+    </details>
+
+    <div class="mini" style="margin-top:8px;">
+      Zoom（需 zoom plugin）：Ctrl+拖曳放大、Ctrl+滾輪縮放、Alt+拖曳平移。<br>
+      align 模式會把每個檔案起點都對齊到 0 秒，才能真正「疊圖比較」。
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="chartWrap">
+      <canvas id="chart"></canvas>
+      <div id="cursorBox">Move mouse over chart...</div>
+    </div>
+  </div>
 
 </div>
 
 <script>
-let FILE_DATA=[];
-let chart=null;
+/* =========================
+   Global state
+========================= */
+let FILE_DATA = [];  // [{name, base, startEpoch, rows, steps, header, enabled}]
+let ALL_KEYS = [];
+let chart = null;
+let NAME_MAP = {};
 
-function hmsFlexibleToSec(hms){
-  const p=hms.split(":").map(Number);
-  return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0);
+const $ = (id) => document.getElementById(id);
+
+/* =========================
+   Self-check / error trap
+========================= */
+(function init(){
+  const ok = (typeof Chart === "function");
+  $("libcheck").textContent = "Chart: " + (ok ? "OK" : "NOT LOADED");
+
+  try{
+    const s = localStorage.getItem("DATALOG_NAME_MAP");
+    if(s) NAME_MAP = JSON.parse(s) || {};
+  }catch(e){
+    NAME_MAP = {};
+  }
+
+  window.onerror = function(msg, src, line, col){
+    $("debugBox").textContent = `❌ JS Error: ${msg}\n@ ${src}:${line}:${col}`;
+  };
+})();
+
+/* =========================
+   time helpers
+========================= */
+function pad2(n){ return String(n).padStart(2,"0"); }
+
+function parseStartEpoch(text){
+  const m = text.match(/Start\s*:\s*\d{4}\/\d{1,2}\/\d{1,2}\s+(\d{1,2}:\d{1,2}:\d{1,2})/);
+  if(!m) return null;
+
+  const [hh, mm, ss] = m[1].split(":").map(Number);
+
+  // 用今天日期作 local epoch 只是為了 absolute X 軸可正常顯示，
+  // 真正日期並不是重點，重要的是相對時間 offset。
+  const now = new Date();
+  const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, ss);
+  return Math.floor(dt.getTime()/1000);
 }
 
 function secToHMS(sec){
-  const h=Math.floor(sec/3600);
-  const m=Math.floor(sec%3600/60);
-  const s=sec%60;
-  return `${h}:${m}:${s}`;
+  sec = Math.max(0, Math.floor(sec));
+  const hh = Math.floor(sec / 3600);
+  const mm = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
 }
 
-function secDiff(base,target){
-  let d=hmsFlexibleToSec(target)-hmsFlexibleToSec(base);
-  if(d<0)d+=86400;
+function epochToDateTime(epoch){
+  const d = new Date(epoch*1000);
+  const Y = d.getFullYear();
+  const M = pad2(d.getMonth()+1);
+  const D = pad2(d.getDate());
+  const h = pad2(d.getHours());
+  const m = pad2(d.getMinutes());
+  const s = pad2(d.getSeconds());
+  return `${Y}/${M}/${D} ${h}:${m}:${s}`;
+}
+
+function fileBaseName(name){
+  return String(name || "").replace(/\.[^.]+$/,"");
+}
+
+function hmsFlexibleToSec(hms){
+  const parts = String(hms).split(":").map(Number);
+  const h = parts[0] || 0;
+  const m = parts[1] || 0;
+  const s = parts[2] || 0;
+  return h * 3600 + m * 60 + s;
+}
+
+function secDiff(baseHms, targetHms){
+  let d = hmsFlexibleToSec(targetHms) - hmsFlexibleToSec(baseHms);
+  if(d < 0) d += 86400;
   return d;
 }
 
+/* =========================
+   Parser
+   - 抓 header
+   - 抓 data rows
+   - 抓 PM_Step => XXX
+========================= */
 function parseDatalogStable(text){
+  const lines = text.split(/\r?\n/);
+  let header = null;
+  const rows = [];
+  const steps = [];
 
-  const lines=text.split(/\r?\n/);
-  let header=null;
-  const rows=[];
-  const steps=[];
+  const decodeHtml = (s) => String(s || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\u00A0/g, " ");
 
-  const startMatch=text.match(/Start.*(\d{1,2}:\d{1,2}:\d{1,2})/);
-  const baseStart=startMatch?startMatch[1]:null;
+  const startMatch = text.match(/Start\s*:\s*\d{4}\/\d{1,2}\/\d{1,2}\s+(\d{1,2}:\d{1,2}:\d{1,2})/);
+  const baseStartHms = startMatch ? startMatch[1] : null;
 
-  let pendingStep=null;
+  const headerRe = /^\s*Time(\s+|$)/;
+  let pendingStep = null;
 
-  for(const raw of lines){
+  for(const raw0 of lines){
+    const raw = decodeHtml(raw0);
+    const line = raw.trim();
+    if(!line) continue;
 
-    const line=raw.trim();
-    if(!line)continue;
+    // <START ...> PM_Step => STABLE
+    const startStepMatch = raw.match(/^<START\s+\w+:(\d{1,2}:\d{1,2}:\d{1,2})\s*>.*?PM_Step\s*(?:=>|=&gt;)\s*(.+)$/i);
+    if(startStepMatch && baseStartHms){
+      const eventHms = startStepMatch[1];
+      const stepName = startStepMatch[2].trim();
+      const tSec = secDiff(baseStartHms, eventHms);
 
-    // START STEP
-    const s1=raw.match(/START.*?(\d{1,2}:\d{1,2}:\d{1,2}).*?PM_Step\s*=>\s*(.+)/i);
-    if(s1 && baseStart){
-      const t=secDiff(baseStart,s1[1]);
-      const name=s1[2].trim();
-      if(!steps.length||steps[steps.length-1].name!==name){
-        steps.push({t,name});
+      const last = steps[steps.length - 1];
+      if(!last || last.name !== stepName){
+        steps.push({ t: tSec, name: stepName });
       }
       continue;
     }
 
-    // EVENT STEP
-    const s2=raw.match(/EVENT.*PM_Step\s*=>\s*(.+)/i);
-    if(s2){
-      pendingStep=s2[1].trim();
+    // <EVENT ...> PM_Step => DEPO
+    const eventStepMatch = raw.match(/^<EVENT\s+\w+:\s*>.*?PM_Step\s*(?:=>|=&gt;)\s*(.+)$/i);
+    if(eventStepMatch){
+      pendingStep = eventStepMatch[1].trim();
       continue;
     }
 
-    // DATA ROW
-    if(/^\d{1,2}:\d{1,2}:\d{1,2}/.test(line)){
+    if(line.startsWith("#")) continue;
+    if(line.startsWith("!")) continue;
+    if(line.startsWith("<")) continue;
 
-      const parts=line.split(/\s+/);
-      if(!parts.length)continue;
+    const isData = /^\d{1,2}:\d{1,2}:\d{1,2}/.test(line);
 
-      const obj={};
-      obj.Time=parts[0];
-      obj.Time_s=hmsFlexibleToSec(parts[0]);
-
-      if(pendingStep){
-        if(!steps.length||steps[steps.length-1].name!==pendingStep){
-          steps.push({t:obj.Time_s,name:pendingStep});
-        }
-        pendingStep=null;
-      }
-
-      for(let i=1;i<parts.length;i++){
-        obj["col"+i]=parseFloat(parts[i]);
-      }
-
-      rows.push(obj);
+    if(!header && headerRe.test(line) && !isData){
+      header = line.split(/\s+/).map(x => x.trim()).filter(Boolean);
+      continue;
     }
+
+    if(!header) continue;
+    if(!isData) continue;
+
+    const parts = line.split(/\s+/).filter(Boolean);
+    if(parts.length < header.length) continue;
+
+    const obj = {};
+    obj.Time = parts[0];
+    obj.Time_s = hmsFlexibleToSec(parts[0]);
+
+    // EVENT step 掛到下一筆 data row 的時間
+    if(pendingStep){
+      const last = steps[steps.length - 1];
+      if(!last || last.name !== pendingStep){
+        steps.push({ t: obj.Time_s, name: pendingStep });
+      }
+      pendingStep = null;
+    }
+
+    for(let i=1;i<header.length;i++){
+      const key = header[i];
+      const num = parseFloat(parts[i]);
+      obj[key] = Number.isFinite(num) ? num : null;
+    }
+
+    rows.push(obj);
   }
 
-  return {rows,steps};
-}<script>
+  return { header: header || [], rows, steps };
+}
+``/* =========================/* =================
+========================= */
+function buildFileList(){
+  const box = $("fileList");
+  box.innerHTML = "";
+
+  FILE_DATA.forEach((f)=>{
+    const div = document.createElement("div");
+    div.className = "chkline";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = f.enabled;
+    cb.onchange = ()=>{
+      f.enabled = cb.checked;
+      triggerDraw();
+    };
+    div.appendChild(cb);
+
+    const lab = document.createElement("span");
+    lab.textContent = `${f.name}` + (f.startEpoch ? ` (Start=${epochToDateTime(f.startEpoch)})` : " (Start=N/A)");
+    div.appendChild(lab);
+
+    box.appendChild(div);
+  });
+}
+
+function buildYList(){
+  const ySel = $("ySelect");
+  ySel.innerHTML = "";
+
+  ALL_KEYS.forEach(k=>{
+    const div = document.createElement("div");
+    div.className = "chkline";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = k;
+    if(/mfc|pressure|temp|actflw|flow|power/i.test(k)) cb.checked = true;
+    cb.onchange = triggerDraw;
+
+    const lab = document.createElement("span");
+    lab.textContent = k;
+
+    div.appendChild(cb);
+    div.appendChild(lab);
+    ySel.appendChild(div);
+  });
+}
+
+function buildNameMapUI(){
+  const box = $("nameMapBox");
+  box.innerHTML = "";
+
+  const mfcKeys = ALL_KEYS.filter(k => /MFC\d{2}_ActFlw/i.test(k));
+
+  if(!mfcKeys.length){
+    box.textContent = "（未偵測到 MFCxx_ActFlw 欄位）";
+    return;
+  }
+
+  for(const k of mfcKeys){
+    const row = document.createElement("div");
+    row.className = "maprow";
+
+    const left = document.createElement("span");
+    left.textContent = k;
+
+    const inp = document.createElement("input");
+    inp.id = "map_" + k;
+    inp.placeholder = "例如：N2 Flow / O2 Flow / SiH4";
+    inp.value = (NAME_MAP[k] || "");
+
+    row.appendChild(left);
+    row.appendChild(inp);
+    box.appendChild(row);
+  }
+}
+
+function getSelectedY(){
+  return [...document.querySelectorAll("#ySelect input[type=checkbox]:checked")].map(cb => cb.value);
+}
+
+/* =========================
+   Y selection helpers
+========================= */
+function selectAllY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = true);
+}
+
+function clearAllY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = false);
+}
+
+function invertY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = !cb.checked);
+}
+
+function selectGroup(type){
+  const t = type.toLowerCase();
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb=>{
+    cb.checked = cb.value.toLowerCase().includes(t);
+  });
+}
+
+/* =========================
+   Name map
+========================= */
+function applyNameMap(){
+  const mfcKeys = ALL_KEYS.filter(k => /MFC\d{2}_ActFlw/i.test(k));
+  for(const k of mfcKeys){
+    const el = document.getElementById("map_" + k);
+    if(!el) continue;
+    const v = el.value.trim();
+    if(v) NAME_MAP[k] = v;
+    else delete NAME_MAP[k];
+  }
+
+  try{
+    localStorage.setItem("DATALOG_NAME_MAP", JSON.stringify(NAME_MAP));
+  }catch(e){}
+
+  draw();
+}
+
+function clearNameMap(){
+  NAME_MAP = {};
+  try{
+    localStorage.removeItem("DATALOG_NAME_MAP");
+  }catch(e){}
+  buildNameMapUI();
+  draw();
+}
+
+function displayKey(k){
+  return NAME_MAP[k] ? NAME_MAP[k] : k;
+}
+
+/* =========================
+   Tools
+========================= */
+function downsample(arr, step){
+  step = Math.max(1, step | 0);
+  if(step <= 1) return arr;
+
+  const out = [];
+  for(let i=0;i<arr.length;i+=step) out.push(arr[i]);
+  return out;
+}
+
+function triggerDraw(){
+  if($("autoDraw").checked) draw();
+}
 
 /* =========================
    Step Overlay Plugin
 ========================= */
 const stepOverlayPlugin = {
-  id: 'stepOverlayPlugin',
-  afterDraw(chart, args, opts){
-
+  id: "stepOverlayPlugin",
+  afterDraw(chart, args, pluginOptions){
+    const opts = pluginOptions || {};
     if(!opts.enabled) return;
     const steps = opts.steps || [];
     if(!steps.length) return;
 
-    const {ctx, chartArea, scales} = chart;
+    const { ctx, chartArea, scales } = chart;
     const xScale = scales.x;
+    if(!xScale || !chartArea) return;
 
     ctx.save();
-    ctx.strokeStyle = "#666";
-    ctx.fillStyle = "#222";
+
+    const topY = chartArea.top + 6;
+    const lineTop = chartArea.top;
+    const lineBottom = chartArea.bottom;
+
+    ctx.strokeStyle = "rgba(120,120,120,0.45)";
+    ctx.fillStyle = "#333";
+    ctx.lineWidth = 1;
     ctx.font = "12px Arial";
     ctx.textAlign = "center";
+    ctx.textBaseline = "top";
 
-    steps.forEach((s,i)=>{
-      const x = xScale.getPixelForValue(s.x);
+    // 垂直線
+    for(let i=0;i<steps.length;i++){
+      const x = xScale.getPixelForValue(steps[i].x);
+      if(x < chartArea.left || x > chartArea.right) continue;
 
-      // 垂直線
       ctx.beginPath();
-      ctx.moveTo(x, chartArea.top);
-      ctx.lineTo(x, chartArea.bottom);
+      ctx.moveTo(x, lineTop);
+      ctx.lineTo(x, lineBottom);
       ctx.stroke();
+    }
 
-      // label
-      const next = steps[i+1]?.x ?? xScale.max;
-      const mid = (x + xScale.getPixelForValue(next)) / 2;
+    // Step 名稱
+    for(let i=0;i<steps.length;i++){
+      const startX = xScale.getPixelForValue(steps[i].x);
+      const endValue = (i < steps.length - 1) ? steps[i + 1].x : xScale.max;
+      const endX = xScale.getPixelForValue(endValue);
+      const midX = (startX + endX) / 2;
 
-      ctx.fillText(s.name, mid, chartArea.top + 5);
-    });
+      if(midX < chartArea.left || midX > chartArea.right) continue;
+      ctx.fillText(steps[i].name, midX, topY);
+    }
 
     ctx.restore();
   }
@@ -181,89 +726,357 @@ const stepOverlayPlugin = {
    Draw chart
 ========================= */
 function draw(){
+  const files = FILE_DATA.filter(f => f.enabled);
+  const yKeys = getSelectedY();
 
-  const files = FILE_DATA;
-  if(!files.length) return;
-
-  const datasets = [];
-
-  // ✅ 先算 step（關鍵）
-  let overlaySteps = [];
-
-  const ref = files[0];
-  if(ref.steps && ref.steps.length){
-    overlaySteps = ref.steps.map(s => ({
-      x: s.t,
-      name: s.name
-    }));
+  if(!files.length || !yKeys.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No data / No selection";
+    return;
   }
 
-  // ✅ 畫數據
-  files.forEach(f=>{
-    f.rows.forEach(r=>{
-      // 只畫一條 BG Pressure 當示範
-      if(r.col2 !== undefined){
-        datasets.push({
-          label: f.name,
-          data: f.rows.map(x=>({x:x.Time_s,y:x.col2})),
-          borderColor: "#ff3b30",
-          borderWidth:2,
-          pointRadius:0
-        });
+  const mode = $("xMode").value;          // align / absolute / relative
+  const showDate = $("showDate").value;   // yes / no
+  const step = Math.max(1, Number($("step").value || 1));
+  const fast = $("fastMode").checked;
+
+  const yMin  = ($("ymin").value  === "") ? undefined : Number($("ymin").value);
+  const yMax  = ($("ymax").value  === "") ? undefined : Number($("ymax").value);
+  const y2Min = ($("y2min").value === "") ? undefined : Number($("y2min").value);
+  const y2Max = ($("y2max").value === "") ? undefined : Number($("y2max").value);
+
+  const colors = [
+    "#ff3b30","#0a84ff","#34c759","#ff9f0a",
+    "#64d2ff","#ffd60a","#bf5af2","#30d158",
+    "#60a5fa","#34d399","#f59e0b","#a78bfa"
+  ];
+
+  let colorIdx = 0;
+  const datasets = [];
+
+  // 用第一個啟用檔案作 Recipe Step 參考
+  const refFile = files[0];
+  let overlaySteps = [];
+
+  if(refFile && refFile.steps && refFile.steps.length){
+    overlaySteps = refFile.steps.map(s=>{
+      let x;
+      if(mode === "align"){
+        x = s.t;
+      }else if(mode === "absolute" && refFile.startEpoch){
+        x = refFile.startEpoch + s.t;
+      }else{
+        x = s.t;
       }
+      return { x, name: s.name };
     });
-  });
+  }
+
+  // 產 datasets
+  for(const f of files){
+    const reduced = downsample(f.rows, step);
+
+    for(const k of yKeys){
+      const pts = [];
+
+      for(const r of reduced){
+        const y = (typeof r[k] === "number") ? r[k] : null;
+        if(y === null) continue;
+
+        let x;
+        if(mode === "align"){
+          x = r.Time_s;
+        }else if(mode === "absolute" && f.startEpoch){
+          x = f.startEpoch + r.Time_s;
+        }else{
+          x = r.Time_s;
+        }
+
+        pts.push({ x, y });
+      }
+
+      const disp = displayKey(k);
+
+      datasets.push({
+        label: `${f.base} | ${disp}`,
+        _fileBase: f.base,
+        _origKey: k,
+        _dispKey: disp,
+        data: pts,
+        parsing: false,
+        borderColor: colors[colorIdx % colors.length],
+        borderWidth: 2,
+        pointRadius: fast ? 0 : 1,
+        pointHitRadius: 12,
+        pointHoverRadius: 3,
+        tension: 0.2,
+        spanGaps: true,
+        yAxisID: /mfc|actflw|flow/i.test(k) ? "y2" : "y"
+      });
+
+      colorIdx++;
+    }
+  }
 
   if(chart) chart.destroy();
 
-  chart = new Chart(document.getElementById("chart"),{
-    type:"line",
-    data:{datasets},
-    plugins:[stepOverlayPlugin],
-    options:{
-      responsive:true,
+  try{
+    if(window.ChartZoom) Chart.register(window.ChartZoom);
+    if(window["chartjs-plugin-zoom"]) Chart.register(window["chartjs-plugin-zoom"]);
+  }catch(e){}
 
-      scales:{
-        x:{
-          type:"linear",
-          ticks:{
-            callback:(v)=>secToHMS(v)
+  chart = new Chart($("chart"), {
+    type: "line",
+    data: { datasets },
+    plugins: [stepOverlayPlugin],
+
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: fast ? false : { duration: 250 },
+      interaction: { mode: "nearest", intersect: false },
+
+      scales: {
+        x: {
+          type: "linear",
+          ticks: {
+            maxTicksLimit: fast ? 12 : 18,
+            callback: (v) => {
+              v = Number(v);
+
+              if(mode === "absolute"){
+                if(showDate === "yes") return epochToDateTime(v);
+                const d = new Date(v * 1000);
+                return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+              }
+
+              return secToHMS(v);
+            }
+          },
+          title: {
+            display: true,
+            text: (mode === "absolute") ? "Absolute Time" : "Time (HH:MM:SS)"
+          }
+        },
+
+        y: {
+          type: "linear",
+          position: "left",
+          min: yMin,
+          max: yMax,
+          title: {
+            display: true,
+            text: "Left"
+          }
+        },
+
+        y2: {
+          type: "linear",
+          position: "right",
+          min: y2Min,
+          max: y2Max,
+          grid: {
+            drawOnChartArea: false
+          },
+          title: {
+            display: true,
+            text: "Right"
           }
         }
       },
 
-      plugins:{
-        stepOverlayPlugin:{
-          enabled: document.getElementById("showSteps").checked,
+      plugins: {
+        legend: {
+          labels: {
+            font: { size: 10 }
+          }
+        },
+
+        stepOverlayPlugin: {
+          enabled: $("showSteps") ? $("showSteps").checked : false,
           steps: overlaySteps
+        },
+
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: "x",
+            modifierKey: "alt"
+          },
+          zoom: {
+            wheel: {
+              enabled: true,
+              modifierKey: "ctrl"
+            },
+            drag: {
+              enabled: true,
+              modifierKey: "ctrl",
+              borderWidth: 1
+            },
+            mode: "x"
+          }
         }
       }
     }
   });
+
+  attachCursorBox(mode, showDate);
+}
+
+/* =========================
+   Cursor box
+========================= */
+function nearestPointByX(arr, x){
+  let lo = 0, hi = arr.length - 1;
+  while(lo < hi){
+    const mid = (lo + hi) >> 1;
+    if(arr[mid].x < x) lo = mid + 1;
+    else hi = mid;
+  }
+
+  let best = arr[lo];
+  if(lo > 0){
+    const prev = arr[lo - 1];
+    if(Math.abs(prev.x - x) < Math.abs(best.x - x)) best = prev;
+  }
+
+  return best;
+}
+
+function attachCursorBox(mode, showDate){
+  const box = $("cursorBox");
+  const canvas = $("chart");
+
+  canvas.onmousemove = (ev)=>{
+    if(!chart) return;
+    const xScale = chart.scales.x;
+    if(!xScale) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const xVal = xScale.getValueForPixel(px);
+
+    let tStr;
+    if(mode === "absolute"){
+      if(showDate === "yes"){
+        tStr = epochToDateTime(xVal);
+      }else{
+        const d = new Date(xVal * 1000);
+        tStr = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+      }
+    }else{
+      tStr = secToHMS(xVal);
+    }
+
+    const lines = [];
+    lines.push(`Time: ${tStr}`);
+
+    for(const ds of chart.data.datasets){
+      const arr = ds.data;
+      if(!arr || !arr.length) continue;
+
+      const p = nearestPointByX(arr, xVal);
+      if(p && Number.isFinite(p.y)){
+        lines.push(`${ds._fileBase} | ${ds._dispKey}: ${p.y}`);
+      }
+    }
+
+    box.textContent = lines.slice(0, 22).join("\n");
+  };
+
+  canvas.onmouseleave = ()=>{
+    box.textContent = "Move mouse over chart...";
+  };
+}
+
+/* =========================
+   Buttons
+========================= */
+function autoScale(){
+  $("ymin").value = "";
+  $("ymax").value = "";
+  $("y2min").value = "";
+  $("y2max").value = "";
+  draw();
+}
+
+function resetZoom(){
+  if(chart && typeof chart.resetZoom === "function") chart.resetZoom();
 }
 
 /* =========================
    File loader
 ========================= */
 async function handleFiles(fileList){
+  const files = [...(fileList || [])];
+  if(!files.length) return;
 
   FILE_DATA = [];
+  ALL_KEYS = [];
 
-  for(const f of fileList){
+  let totalRows = 0;
+  let maxCols = 0;
+  const debugLines = [];
 
+  $("debugBox").textContent = "讀取中...\n";
+
+  for(const f of files){
     const text = await f.text();
+    const startEpoch = parseStartEpoch(text);
     const res = parseDatalogStable(text);
+
+    debugLines.push(`- ${f.name}: header=${res.header.length} rows=${res.rows.length} steps=${res.steps.length} start=${startEpoch ? epochToDateTime(startEpoch) : "N/A"}`);
+
+    if(!res.rows.length || !res.header.length) continue;
+
+    res.header.forEach(k=>{
+      if(k !== "Time" && !ALL_KEYS.includes(k)) ALL_KEYS.push(k);
+    });
 
     FILE_DATA.push({
       name: f.name,
+      base: fileBaseName(f.name),
+      startEpoch,
+      header: res.header,
       rows: res.rows,
-      steps: res.steps
+      steps: res.steps || [],
+      enabled: true
     });
 
-    console.log("steps=", res.steps);
+    totalRows += res.rows.length;
+    maxCols = Math.max(maxCols, res.header.length);
   }
+
+  $("debugBox").textContent = debugLines.join("\n");
+
+  ALL_KEYS.sort((a,b)=>a.localeCompare(b));
+  $("stats").textContent = `Files=${FILE_DATA.length} | Rows=${totalRows} | Cols=${maxCols}`;
+
+  if(!FILE_DATA.length){
+    alert("沒有可解析的檔案：請看 Debug 區塊，檔案 header/rows 是否為 0。");
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    return;
+  }
+
+  buildFileList();
+  buildYList();
+  buildNameMapUI();
+
+  if(FILE_DATA.length >= 2) $("xMode").value = "align";
+
+  if(totalRows >= 4000) $("step").value = 10;
+  else if(totalRows >= 1200) $("step").value = 5;
+  else $("step").value = 3;
 
   draw();
 }
-
 </script>
+
+</body>
+</html>
