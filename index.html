@@ -2,8 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Datalog Tool - Clean Step Text Only</title>
+<title>Datalog Tool - Step Clean</title>
 
 <script src="./libs/chart.umd.min.js"></script>
 <script src="./libs/chartjs-plugin-zoom.min.js"></script>
@@ -15,54 +14,20 @@ body{
   background:#111;
   color:#eee;
 }
-
-.container{
-  display:flex;
-  height:100vh;
-}
-
-.left{
-  width:420px;
-  background:#222;
-  padding:10px;
-  overflow:auto;
-}
-
-.right{
-  flex:1;
-  background:#fff;
-}
-
-#chart{
-  width:100%;
-  height:100%;
-}
-
-.row{margin:6px 0;}
-input,select{width:100%;}
+.container{display:flex;height:100vh;}
+.left{width:400px;background:#222;padding:10px;overflow:auto;}
+.right{flex:1;background:#fff;}
 </style>
 </head>
 
 <body>
-
 <div class="container">
 
 <div class="left">
-
 <input type="file" multiple onchange="handleFiles(this.files)">
-
-<div id="stats">Files=0</div>
+<div id="stats"></div>
 <pre id="debugBox"></pre>
-
-<div class="row">
-<select id="xMode" onchange="draw()">
-<option value="align">align</option>
-<option value="absolute">absolute</option>
-</select>
-</div>
-
 <div id="ySelect"></div>
-
 </div>
 
 <div class="right">
@@ -82,22 +47,14 @@ function hmsToSec(s){
   return p[0]*3600+p[1]*60+p[2];
 }
 
-function parseStartEpoch(txt){
-  let m=txt.match(/Start\s*:\s*(\d+\/\d+\/\d+)\s+(\d+:\d+:\d+)/);
-  if(!m) return null;
-  return new Date(m[1]+" "+m[2]).getTime()/1000;
+function decode(txt){
+  return txt.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/=&gt;/g,"=>");
 }
-``
-function decode(text){
-  return text.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/=&gt;/g,"=>");
-}
-
 function parse(text){
 
   text=decode(text);
 
   let lines=text.split(/\n/);
-
   let header=null;
   let rows=[];
   let steps=[];
@@ -110,7 +67,7 @@ function parse(text){
 
     if(line.startsWith("#")||line.startsWith("!")) continue;
 
-    // ✅ Step
+    // ✅ STEP 抓取
     let m=line.match(/PM[_\s]*Step\s*[:=>]+\s*(.*)/i);
     if(m){
       let s=m[1].trim();
@@ -118,7 +75,7 @@ function parse(text){
       continue;
     }
 
-    // ✅ Header
+    // ✅ HEADER
     if(!header && /^\s*Time/.test(line)){
       header=line.split(/\s+/);
       continue;
@@ -126,18 +83,21 @@ function parse(text){
 
     if(!header) continue;
 
-    // ✅ Data row
+    // ✅ DATA
     if(!/^\d+:\d+:\d+/.test(line)) continue;
 
     let p=line.split(/\s+/);
     let obj={};
     obj.t=hmsToSec(p[0]);
 
+    // ✅ STEP去重 + 間隔過濾
     if(pending){
       let last=steps[steps.length-1];
-      if(!last || last.name!==pending){
+
+      if(!last || last.name!==pending || (obj.t-last.t)>10){
         steps.push({t:obj.t,name:pending});
       }
+
       pending=null;
     }
 
@@ -151,65 +111,53 @@ function parse(text){
   return {rows,steps,header};
 }
 
-function handleFiles(files){
+async function handleFiles(files){
 
   FILE_DATA=[];
   ALL_KEYS=[];
   let debug=[];
 
-  (async()=>{
+  for(const f of files){
 
-    for(let f of files){
+    let txt=await f.text();
+    let p=parse(txt);
 
-      let txt=await f.text();
-      let p=parse(txt);
+    debug.push(`${f.name} rows=${p.rows.length} steps=${p.steps.length}`);
 
-      let start=parseStartEpoch(txt);
-
-      debug.push(`${f.name} rows=${p.rows.length} steps=${p.steps.length}`);
-
-      if(p.header){
-        p.header.forEach(k=>{
-          if(k!=="Time" && !ALL_KEYS.includes(k)){
-            ALL_KEYS.push(k);
-          }
-        });
-      }
-
-      FILE_DATA.push({
-        name:f.name,
-        rows:p.rows,
-        steps:p.steps,
-        start:start,
-        enabled:true
+    if(p.header){
+      p.header.forEach(k=>{
+        if(k!=="Time" && !ALL_KEYS.includes(k)){
+          ALL_KEYS.push(k);
+        }
       });
     }
 
-    document.getElementById("debugBox").innerText=debug.join("\n");
+    FILE_DATA.push({
+      name:f.name,
+      rows:p.rows,
+      steps:p.steps
+    });
+  }
 
-    buildY();
-    draw();
+  document.getElementById("debugBox").innerText=debug.join("\n");
 
-  })();
-}
-
-function buildY(){
-
-  let el=document.getElementById("ySelect");
-  el.innerHTML="";
+  let ydiv=document.getElementById("ySelect");
+  ydiv.innerHTML="";
 
   ALL_KEYS.forEach(k=>{
     let d=document.createElement("div");
     d.innerHTML=`<input type="checkbox" value="${k}" checked onchange="draw()"> ${k}`;
-    el.appendChild(d);
+    ydiv.appendChild(d);
   });
+
+  draw();
 }
 
 function getY(){
   return [...document.querySelectorAll("#ySelect input:checked")].map(x=>x.value);
 }
 
-/* ✅ Step文字 ONLY（不畫線、不畫色塊） */
+/* ✅ STEP文字（防重疊 + X軸下方） */
 const stepTextPlugin={
   id:"stepTextPlugin",
   afterDraw(chart,args,opt){
@@ -220,24 +168,26 @@ const stepTextPlugin={
     let {ctx,chartArea,scales}=chart;
     let x=scales.x;
 
+    let yPos = chartArea.bottom + 20;
+
     ctx.save();
     ctx.fillStyle="#000";
+    ctx.font="10px Arial";
     ctx.textAlign="center";
-    ctx.font="bold 12px Arial";
 
-    for(let i=0;i<steps.length;i++){
+    const MIN_GAP=70;   // ✅ 間距控制
+    let lastX=-9999;
 
-      let s=steps[i];
-      let next=steps[i+1];
+    for(let s of steps){
 
-      let x1=x.getPixelForValue(s.x);
-      let x2=next?x.getPixelForValue(next.x):chartArea.right;
+      let px=x.getPixelForValue(s.x);
 
-      let mid=(x1+x2)/2;
+      if(px<chartArea.left||px>chartArea.right) continue;
 
-      if(mid>=chartArea.left && mid<=chartArea.right){
-        ctx.fillText(s.name,mid,chartArea.top+4);
-      }
+      if(Math.abs(px-lastX)<MIN_GAP) continue;
+
+      ctx.fillText(s.name,px,yPos);
+      lastX=px;
     }
 
     ctx.restore();
@@ -248,8 +198,8 @@ function draw(){
 
   if(!FILE_DATA.length) return;
 
+  let keys=getY();
   let datasets=[];
-  let ykeys=getY();
   let colors=["red","blue","green","orange"];
 
   let file=FILE_DATA[0];
@@ -258,7 +208,7 @@ function draw(){
 
   FILE_DATA.forEach((f,i)=>{
 
-    let key=ykeys[0];
+    let key=keys[0];
 
     let data=f.rows.map(r=>({
       x:r.t,
@@ -266,7 +216,7 @@ function draw(){
     }));
 
     datasets.push({
-      label:f.name+" | "+key,
+      label:f.name,
       data:data,
       parsing:false,
       borderColor:colors[i%colors.length],
@@ -280,13 +230,17 @@ function draw(){
   chart=new Chart(document.getElementById("chart"),{
 
     type:"line",
-
     data:{datasets},
 
     plugins:[stepTextPlugin],
 
     options:{
       responsive:true,
+
+      layout:{
+        padding:{bottom:40}   // ✅ STEP空間
+      },
+
       scales:{
         x:{type:"linear"},
         y:{type:"linear"}
@@ -312,7 +266,6 @@ function draw(){
     }
   });
 }
-
 </script>
 </body>
 </html>
