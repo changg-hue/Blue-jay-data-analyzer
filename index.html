@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Datalog Overlay Tool (Final Clean Step Band)</title>
+<title>Datalog Overlay Tool (Final Stable for DatalogFileV1.0)</title>
 
 <script src="./libs/chart.umd.min.js"></script>
 <script src="./libs/chartjs-plugin-zoom.min.js"></script>
@@ -35,7 +35,7 @@ body{
 }
 
 .left{
-  width:430px;
+  width:440px;
   background:var(--panel);
   border:1px solid #2b2b2b;
   border-radius:10px;
@@ -165,7 +165,7 @@ summary{
 }
 
 #ySelect{
-  max-height:220px;
+  max-height:240px;
   overflow:auto;
 }
 
@@ -180,14 +180,8 @@ summary{
 .chkline input{
   transform:scale(1.05);
 }
-
-.subtle{
-  font-size:11px;
-  color:#999;
-}
 </style>
 </head>
-
 <body>
 <div class="container">
 
@@ -203,7 +197,10 @@ summary{
 
     <details open>
       <summary>解析結果 / Debug</summary>
-      <div class="mini">會列出每個檔案的 rows / steps / header。若 rows=0，通常是表頭或資料格式未匹配。</div>
+      <div class="mini">
+        會列出每個檔案的 rows / steps / header。<br>
+        這版已支援 `&lt;START ...&gt; PM_Step =&gt; ...` 與 `&lt;EVENT ...&gt; PM_Step =&gt; ...`
+      </div>
       <div id="debugBox">（尚未選檔）</div>
     </details>
 
@@ -226,6 +223,7 @@ summary{
         <input type="checkbox" id="showStepBands" checked onchange="draw()">
         顯示 Step 顏色區塊
       </label>
+
       <label style="display:flex;align-items:center;gap:6px;">
         <input type="checkbox" id="showSteps" checked onchange="draw()">
         顯示 Step 文字
@@ -248,12 +246,14 @@ summary{
         <button type="button" onclick="selectAllY(); draw();">全選</button>
         <button type="button" onclick="clearAllY(); draw();">全取消</button>
       </div>
+
       <div class="row">
         <button type="button" onclick="selectGroup('flow'); draw();">Flow</button>
-        <button type="button" onclick="selectGroup('mfc'); draw();">MFC</button>
         <button type="button" onclick="selectGroup('pressure'); draw();">Pressure</button>
         <button type="button" onclick="selectGroup('temp'); draw();">Temp</button>
+        <button type="button" onclick="selectGroup('power'); draw();">Power</button>
       </div>
+
       <div id="ySelect"></div>
     </details>
 
@@ -273,7 +273,7 @@ summary{
 
     <div class="mini" style="margin-top:8px;">
       Ctrl + 滾輪縮放、Ctrl + 拖曳縮放、Alt + 拖曳平移。<br>
-      Step 區塊會以第一個啟用檔案的 step 當背景基準。
+      Step 區塊以第一個啟用檔案的 step 當背景基準。
     </div>
   </div>
 
@@ -349,8 +349,18 @@ function downsample(arr, step){
   return out;
 }
 
+function decodeDatalogText(text){
+  return String(text || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/=&gt;/g, "=>")
+    .replace(/\r/g, "");
+}
+
 function parse(text){
-  const lines = String(text || "").split(/\r?\n/);
+  text = decodeDatalogText(text);
+
+  const lines = String(text || "").split(/\n/);
   let header = null;
   const rows = [];
   const steps = [];
@@ -360,20 +370,34 @@ function parse(text){
     const line = raw.trim();
     if(!line) continue;
 
-    // 抓 Step：支援 PM_Step : XXX / PM_Step => XXX / PM Step = XXX
-    const stepMatch = line.match(/PM[_\s]*Step\s*[:=>]+\s*(.+)$/i);
+    if(line.startsWith("#")) continue;
+    if(line.startsWith("!")) continue;
+
+    // 抓 step，支援：
+    // PM_Step => STABLE
+    // PM_Step : STABLE
+    // PM Step = STABLE
+    const stepMatch = line.match(/PM[_\s]*Step\s*[:=>]+\s*(.*)$/i);
     if(stepMatch){
-      pending = stepMatch[1].trim();
+      const stepName = (stepMatch[1] || "").trim();
+
+      // 空白 step 直接略過（你的TXT裡有這種）
+      if(stepName){
+        pending = stepName;
+      }
+      continue;
     }
 
-    // 抓表頭
+    // 表頭
     if(!header && /^\s*Time\b/i.test(line)){
       header = line.split(/\s+/).map(x => x.trim()).filter(Boolean);
       continue;
     }
 
     if(!header) continue;
-    if(!/^\d{1,2}:\d{1,2}:\d{1,2}/.test(line)) continue;
+
+    // 資料列：0:0:0 / 0:1:31 / 10:12:59
+    if(!/^\d{1,2}:\d{1,2}:\d{1,2}\b/.test(line)) continue;
 
     const parts = line.split(/\s+/).filter(Boolean);
     if(parts.length < header.length) continue;
@@ -381,6 +405,7 @@ function parse(text){
     const obj = {};
     obj.t = hmsToSec(parts[0]);
 
+    // EVENT step 掛到下一筆 data row
     if(pending){
       const last = steps[steps.length - 1];
       if(!last || last.name !== pending){
@@ -405,7 +430,7 @@ function buildFileList(){
   const box = $("fileList");
   box.innerHTML = "";
 
-  FILE_DATA.forEach((f, idx) => {
+  FILE_DATA.forEach((f) => {
     const div = document.createElement("div");
     div.className = "chkline";
 
@@ -437,7 +462,7 @@ function buildYList(){
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = k;
-    cb.checked = /flow|mfc|pressure|temp|power|chamber/i.test(k);
+    cb.checked = /flow|pressure|temp|power|position|current/i.test(k);
     cb.onchange = draw;
 
     const span = document.createElement("span");
@@ -474,7 +499,6 @@ function resetZoomSafe(){
   }
 }
 
-/* Step 色塊顏色 */
 function getBandColor(i, alpha){
   const palette = [
     [255,99,132],
@@ -492,7 +516,6 @@ function getBandColor(i, alpha){
   return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
 }
 
-/* Step 顏色區塊 */
 const stepBandPlugin = {
   id: "stepBandPlugin",
   beforeDatasetsDraw(chart, args, opt){
@@ -530,7 +553,6 @@ const stepBandPlugin = {
   }
 };
 
-/* Step 文字 + 分隔線 */
 const stepOverlayPlugin = {
   id: "stepOverlayPlugin",
   afterDraw(chart, args, opt){
@@ -571,7 +593,7 @@ const stepOverlayPlugin = {
     ctx.restore();
   }
 };
-``function chartCanvas(){
+function chartCanvas(){
   return document.getElementById("chart");
 }
 
@@ -593,7 +615,10 @@ async function handleFiles(files){
     const parsed = parse(text);
     const start = parseStartEpoch(text);
 
-    debug.push(`${f.name} rows=${parsed.rows.length} steps=${parsed.steps.length} header=${parsed.header.length}${start ? ` start=${epochToDateTime(start)}` : ""}`);
+    debug.push(
+      `${f.name} rows=${parsed.rows.length} steps=${parsed.steps.length} header=${parsed.header.length}` +
+      `${start ? ` start=${epochToDateTime(start)}` : ""}`
+    );
 
     if(parsed.header.length && parsed.rows.length){
       parsed.header.forEach(k => {
@@ -658,7 +683,7 @@ function draw(){
 
   let yKeys = getSelectedY();
 
-  // 若沒有勾 Y，則自動抓第一個欄位
+  // 如果沒勾任何 Y，則自動抓第一個數值欄位
   if(!yKeys.length && enabledFiles[0] && enabledFiles[0].rows[0]){
     const autoKey = Object.keys(enabledFiles[0].rows[0]).find(k => k !== "t");
     if(autoKey) yKeys = [autoKey];
@@ -739,6 +764,7 @@ function draw(){
         tension: 0.1,
         spanGaps: true
       });
+
       colorIdx++;
     }
   }
@@ -764,7 +790,9 @@ function draw(){
     if(window["chartjs-plugin-zoom"]){
       Chart.register(window["chartjs-plugin-zoom"]);
     }
-  }catch(e){}
+  }catch(e){
+    // ignore duplicate register
+  }
 
   chart = new Chart(chartCanvas(), {
     type: "line",
@@ -897,6 +925,7 @@ function attachCursorBox(mode){
     for(const ds of chart.data.datasets){
       const arr = ds.data;
       if(!arr || !arr.length) continue;
+
       const p = nearestPointByX(arr, xVal);
       if(p && Number.isFinite(p.y)){
         lines.push(`${ds._fileBase} | ${ds._key}: ${p.y}`);
