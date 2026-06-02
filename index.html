@@ -2,269 +2,890 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8"/>
-<title>Datalog Tool - Step Clean</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Datalog Overlay Tool - Final Clean Step Labels</title>
 
 <script src="./libs/chart.umd.min.js"></script>
 <script src="./libs/chartjs-plugin-zoom.min.js"></script>
 
 <style>
+:root{
+  --bg:#111;
+  --panel:#222;
+  --border:#444;
+  --text:#eee;
+  --muted:#bbb;
+  --btn:#2d2d2d;
+}
+
+*{ box-sizing:border-box; }
+
 body{
   margin:0;
-  font-family:Arial;
+  font-family:Arial, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.container{
+  display:flex;
+  height:100vh;
+  gap:10px;
+  padding:10px;
+}
+
+.left{
+  width:420px;
+  background:var(--panel);
+  border:1px solid #2b2b2b;
+  border-radius:10px;
+  padding:10px;
+  overflow:auto;
+  flex-shrink:0;
+}
+
+.right{
+  flex:1;
+  min-width:0;
+  display:flex;
+}
+
+.row{
+  display:flex;
+  gap:8px;
+  margin:6px 0;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
+label{
+  font-size:12px;
+  color:var(--muted);
+}
+
+input,select,button{
   background:#111;
   color:#eee;
+  border:1px solid #444;
+  border-radius:6px;
+  padding:6px 8px;
 }
-.container{display:flex;height:100vh;}
-.left{width:400px;background:#222;padding:10px;overflow:auto;}
-.right{flex:1;background:#fff;}
+
+button{
+  cursor:pointer;
+  background:var(--btn);
+}
+
+button:hover{
+  filter:brightness(1.08);
+}
+
+.pill{
+  display:inline-block;
+  padding:3px 8px;
+  border:1px solid var(--border);
+  border-radius:999px;
+  font-size:12px;
+  color:var(--muted);
+  background:#1a1a1a;
+}
+
+details{
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:8px;
+  background:#1a1a1a;
+  margin-top:8px;
+}
+
+summary{
+  cursor:pointer;
+  font-weight:bold;
+}
+
+.mini{
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.45;
+}
+
+#debugBox,
+#fileList,
+#ySelect{
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:6px;
+  background:#0f0f0f;
+}
+
+#debugBox{
+  white-space:pre-wrap;
+  font:12px Consolas, monospace;
+  color:var(--muted);
+  min-height:60px;
+}
+
+#fileList{
+  max-height:150px;
+  overflow:auto;
+}
+
+#ySelect{
+  max-height:260px;
+  overflow:auto;
+}
+
+.chkline{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:4px 0;
+  word-break:break-word;
+}
+
+.chkline input{
+  transform:scale(1.05);
+}
+
+.chartWrap{
+  position:relative;
+  width:100%;
+  height:100%;
+  min-height:320px;
+  background:#fff;
+  border-radius:10px;
+  overflow:hidden;
+  border:1px solid #2b2b2b;
+}
+
+#chart{
+  width:100% !important;
+  height:100% !important;
+  display:block;
+  background:#fff !important;
+}
+
+#cursorBox{
+  position:absolute;
+  right:10px;
+  top:10px;
+  background:rgba(0,0,0,0.82);
+  color:#fff;
+  font:12px Consolas, monospace;
+  padding:8px 10px;
+  border-radius:8px;
+  white-space:pre;
+  pointer-events:none;
+  max-width:580px;
+  max-height:72%;
+  overflow:auto;
+}
 </style>
 </head>
-
 <body>
 <div class="container">
 
-<div class="left">
-<input type="file" multiple onchange="handleFiles(this.files)">
-<div id="stats"></div>
-<pre id="debugBox"></pre>
-<div id="ySelect"></div>
-</div>
+  <div class="left">
+    <div class="row">
+      <input type="file" id="fileInput" multiple accept=".txt,.log" onchange="handleFiles(this.files)">
+    </div>
 
-<div class="right">
-<canvas id="chart"></canvas>
-</div>
+    <div class="row">
+      <span class="pill" id="stats">Files=0 | Rows=0 | Cols=0</span>
+      <span class="pill" id="libcheck">Chart: ?</span>
+    </div>
+
+    <details open>
+      <summary>解析結果 / Debug</summary>
+      <div class="mini">
+        會列出每個檔案 rows / steps / header。<br>
+        支援 `&lt;START ...&gt; PM_Step =&gt; ...` 與 `&lt;EVENT ...&gt; PM_Step =&gt; ...`
+      </div>
+      <div id="debugBox">（尚未選檔）</div>
+    </details>
+
+    <details open>
+      <summary>載入檔案清單</summary>
+      <div class="mini">勾選要疊哪些檔案。</div>
+      <div id="fileList"></div>
+    </details>
+
+    <div class="row">
+      <label>X 模式</label>
+      <select id="xMode" onchange="draw()">
+        <option value="align">align（起點=0）</option>
+        <option value="absolute">absolute（Start + offset）</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="showSteps" checked onchange="draw()">
+        顯示 Step 文字（X軸下方）
+      </label>
+    </div>
+
+    <div class="row">
+      <label>Step 最小間距(px)</label>
+      <input id="stepGap" type="number" min="10" step="5" value="70" style="width:90px;" onchange="draw()">
+    </div>
+
+    <div class="row">
+      <button type="button" onclick="draw()">🔄 重新繪圖</button>
+      <button type="button" onclick="resetZoomSafe()">↩ Reset Zoom</button>
+    </div>
+
+    <details open>
+      <summary>Y 欄位選擇</summary>
+      <div class="row">
+        <button type="button" onclick="selectAllY(); draw();">全選</button>
+        <button type="button" onclick="clearAllY(); draw();">全取消</button>
+      </div>
+
+      <div class="row">
+        <button type="button" onclick="selectGroup('flow'); draw();">Flow</button>
+        <button type="button" onclick="selectGroup('pressure'); draw();">Pressure</button>
+        <button type="button" onclick="selectGroup('temp'); draw();">Temp</button>
+        <button type="button" onclick="selectGroup('power'); draw();">Power</button>
+      </div>
+
+      <div id="ySelect"></div>
+    </details>
+
+    <details open>
+      <summary>效能設定</summary>
+      <div class="row">
+        <label>抽樣 step</label>
+        <input id="sampleStep" type="number" min="1" step="1" value="3" style="width:90px;" onchange="draw()">
+      </div>
+
+      <div class="row">
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="fastMode" checked onchange="draw()">
+          Fast mode（不畫點 / 限 ticks）
+        </label>
+      </div>
+    </details>
+
+    <div class="mini" style="margin-top:8px;">
+      滑鼠操作：<br>
+      - 直接拖曳框選縮放<br>
+      - 滾輪縮放<br>
+      - Alt + 拖曳平移
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="chartWrap">
+      <canvas id="chart"></canvas>
+      <div id="cursorBox">Move mouse over chart...</div>
+    </div>
+  </div>
 
 </div>
 
 <script>
+let FILE_DATA = [];
+let chart = null;
+let ALL_KEYS = [];
 
-let FILE_DATA=[];
-let chart=null;
-let ALL_KEYS=[];
+const $ = (id) => document.getElementById(id);
+
+(function init(){
+  let ok = false;
+  try{
+    ok = (typeof Chart === "function");
+  }catch(e){
+    ok = false;
+  }
+  $("libcheck").textContent = "Chart: " + (ok ? "OK" : "NOT LOADED");
+})();
+
+function parseStartEpoch(text){
+  const m = String(text || "").match(/Start\s*:\s*(\d{4}\/\d{1,2}\/\d{1,2})\s+(\d{1,2}:\d{1,2}:\d{1,2})/i);
+  if(!m) return null;
+  const dt = new Date(m[1] + " " + m[2]);
+  if(Number.isNaN(dt.getTime())) return null;
+  return Math.floor(dt.getTime() / 1000);
+}
 
 function hmsToSec(s){
-  let p=s.split(":").map(Number);
-  return p[0]*3600+p[1]*60+p[2];
+  const p = String(s || "").split(":").map(Number);
+  return (p[0] || 0) * 3600 + (p[1] || 0) * 60 + (p[2] || 0);
 }
 
-function decode(txt){
-  return txt.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/=&gt;/g,"=>");
+function secToHMS(sec){
+  sec = Math.max(0, Math.floor(Number(sec) || 0));
+  const hh = Math.floor(sec / 3600);
+  const mm = Math.floor((sec % 3600) / 60);
+  const ss = sec % 60;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
 }
+
+function epochToDateTime(epoch){
+  const d = new Date(Number(epoch) * 1000);
+  const Y = d.getFullYear();
+  const M = String(d.getMonth() + 1).padStart(2,"0");
+  const D = String(d.getDate()).padStart(2,"0");
+  const h = String(d.getHours()).padStart(2,"0");
+  const m = String(d.getMinutes()).padStart(2,"0");
+  const s = String(d.getSeconds()).padStart(2,"0");
+  return `${Y}/${M}/${D} ${h}:${m}:${s}`;
+}
+
+function fileBaseName(name){
+  return String(name || "").replace(/\.[^.]+$/, "");
+}
+
+function downsample(arr, step){
+  step = Math.max(1, Number(step) || 1);
+  if(step <= 1) return arr;
+  const out = [];
+  for(let i = 0; i < arr.length; i += step){
+    out.push(arr[i]);
+  }
+  return out;
+}
+
+function decodeDatalogText(text){
+  return String(text || "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/=&gt;/g, "=>")
+    .replace(/\r/g, "");
+}
+
 function parse(text){
+  text = decodeDatalogText(text);
 
-  text=decode(text);
-
-  let lines=text.split(/\n/);
-  let header=null;
-  let rows=[];
-  let steps=[];
-  let pending=null;
+  const lines = String(text || "").split(/\n/);
+  let header = null;
+  const rows = [];
+  const steps = [];
+  let pending = null;
 
   for(let raw of lines){
-
-    let line=raw.trim();
+    const line = raw.trim();
     if(!line) continue;
 
-    if(line.startsWith("#")||line.startsWith("!")) continue;
+    if(line.startsWith("#")) continue;
+    if(line.startsWith("!")) continue;
 
-    // ✅ STEP 抓取
-    let m=line.match(/PM[_\s]*Step\s*[:=>]+\s*(.*)/i);
-    if(m){
-      let s=m[1].trim();
-      if(s) pending=s;
+    // 抓 step
+    const stepMatch = line.match(/PM[_\s]*Step\s*[:=>]+\s*(.*)$/i);
+    if(stepMatch){
+      const stepName = (stepMatch[1] || "").trim();
+      // 空白 step 忽略
+      if(stepName){
+        pending = stepName;
+      }
       continue;
     }
 
-    // ✅ HEADER
-    if(!header && /^\s*Time/.test(line)){
-      header=line.split(/\s+/);
+    // 抓表頭
+    if(!header && /^\s*Time\b/i.test(line)){
+      header = line.split(/\s+/).map(x => x.trim()).filter(Boolean);
       continue;
     }
 
     if(!header) continue;
 
-    // ✅ DATA
-    if(!/^\d+:\d+:\d+/.test(line)) continue;
+    // 抓資料列
+    if(!/^\d{1,2}:\d{1,2}:\d{1,2}\b/.test(line)) continue;
 
-    let p=line.split(/\s+/);
-    let obj={};
-    obj.t=hmsToSec(p[0]);
+    const parts = line.split(/\s+/).filter(Boolean);
+    if(parts.length < header.length) continue;
 
-    // ✅ STEP去重 + 間隔過濾
+    const obj = {};
+    obj.t = hmsToSec(parts[0]);
+
+    // 將 EVENT step 掛到下一筆 data row，並做去重 / 時間間隔過濾
     if(pending){
-      let last=steps[steps.length-1];
-
-      if(!last || last.name!==pending || (obj.t-last.t)>10){
-        steps.push({t:obj.t,name:pending});
+      const last = steps[steps.length - 1];
+      if(!last || last.name !== pending || (obj.t - last.t) > 10){
+        steps.push({ t: obj.t, name: pending });
       }
-
-      pending=null;
+      pending = null;
     }
 
-    for(let i=1;i<header.length;i++){
-      obj[header[i]]=parseFloat(p[i])||null;
+    for(let i = 1; i < header.length; i++){
+      const key = header[i];
+      const num = parseFloat(parts[i]);
+      obj[key] = Number.isFinite(num) ? num : null;
     }
 
     rows.push(obj);
   }
 
-  return {rows,steps,header};
+  return { rows, steps, header: header || [] };
 }
 
-async function handleFiles(files){
+function buildFileList(){
+  const box = $("fileList");
+  box.innerHTML = "";
 
-  FILE_DATA=[];
-  ALL_KEYS=[];
-  let debug=[];
+  FILE_DATA.forEach((f) => {
+    const div = document.createElement("div");
+    div.className = "chkline";
 
-  for(const f of files){
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = f.enabled;
+    cb.onchange = () => {
+      f.enabled = cb.checked;
+      draw();
+    };
 
-    let txt=await f.text();
-    let p=parse(txt);
+    const span = document.createElement("span");
+    span.textContent = `${f.name}${f.start ? ` (Start=${epochToDateTime(f.start)})` : ""}`;
 
-    debug.push(`${f.name} rows=${p.rows.length} steps=${p.steps.length}`);
-
-    if(p.header){
-      p.header.forEach(k=>{
-        if(k!=="Time" && !ALL_KEYS.includes(k)){
-          ALL_KEYS.push(k);
-        }
-      });
-    }
-
-    FILE_DATA.push({
-      name:f.name,
-      rows:p.rows,
-      steps:p.steps
-    });
-  }
-
-  document.getElementById("debugBox").innerText=debug.join("\n");
-
-  let ydiv=document.getElementById("ySelect");
-  ydiv.innerHTML="";
-
-  ALL_KEYS.forEach(k=>{
-    let d=document.createElement("div");
-    d.innerHTML=`<input type="checkbox" value="${k}" checked onchange="draw()"> ${k}`;
-    ydiv.appendChild(d);
+    div.appendChild(cb);
+    div.appendChild(span);
+    box.appendChild(div);
   });
-
-  draw();
 }
 
-function getY(){
-  return [...document.querySelectorAll("#ySelect input:checked")].map(x=>x.value);
+function buildYList(){
+  const yBox = $("ySelect");
+  yBox.innerHTML = "";
+
+  ALL_KEYS.forEach(k => {
+    const div = document.createElement("div");
+    div.className = "chkline";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = k;
+    cb.checked = /flow|pressure|temp|power|position|current/i.test(k);
+    cb.onchange = draw;
+
+    const span = document.createElement("span");
+    span.textContent = k;
+
+    div.appendChild(cb);
+    div.appendChild(span);
+    yBox.appendChild(div);
+  });
 }
 
-/* ✅ STEP文字（防重疊 + X軸下方） */
-const stepTextPlugin={
-  id:"stepTextPlugin",
-  afterDraw(chart,args,opt){
+function getSelectedY(){
+  return [...document.querySelectorAll("#ySelect input[type=checkbox]:checked")].map(x => x.value);
+}
 
-    let steps=opt.steps;
-    if(!steps?.length) return;
+function selectAllY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = true);
+}
 
-    let {ctx,chartArea,scales}=chart;
-    let x=scales.x;
+function clearAllY(){
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => cb.checked = false);
+}
 
-    let yPos = chartArea.bottom + 20;
+function selectGroup(keyword){
+  const k = String(keyword || "").toLowerCase();
+  document.querySelectorAll("#ySelect input[type=checkbox]").forEach(cb => {
+    cb.checked = cb.value.toLowerCase().includes(k);
+  });
+}
+
+function resetZoomSafe(){
+  if(chart && typeof chart.resetZoom === "function"){
+    chart.resetZoom();
+  }
+}
+
+// Step 文字 Plugin：顯示在 X 軸下方、橫向排列、避免重疊
+const stepTextPlugin = {
+  id: "stepTextPlugin",
+  afterDraw(chart, args, opt){
+    if(!opt || !opt.enabled) return;
+    const steps = opt.steps || [];
+    if(!steps.length) return;
+
+    const { ctx, chartArea, scales } = chart;
+    const x = scales.x;
+    if(!x || !chartArea) return;
+
+    const MIN_GAP = Math.max(10, Number(opt.minGap) || 70);
+    const yPos = chartArea.bottom + 18;
 
     ctx.save();
-    ctx.fillStyle="#000";
-    ctx.font="10px Arial";
-    ctx.textAlign="center";
+    ctx.fillStyle = "#000";
+    ctx.font = "10px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
 
-    const MIN_GAP=70;   // ✅ 間距控制
-    let lastX=-9999;
+    let lastX = -9999;
 
-    for(let s of steps){
+    for(const s of steps){
+      const px = x.getPixelForValue(s.x);
 
-      let px=x.getPixelForValue(s.x);
+      if(px < chartArea.left || px > chartArea.right) continue;
+      if(Math.abs(px - lastX) < MIN_GAP) continue;
 
-      if(px<chartArea.left||px>chartArea.right) continue;
-
-      if(Math.abs(px-lastX)<MIN_GAP) continue;
-
-      ctx.fillText(s.name,px,yPos);
-      lastX=px;
+      ctx.fillText(s.name, px, yPos);
+      lastX = px;
     }
 
     ctx.restore();
   }
 };
+function chartCanvas(){
+  return document.getElementById("chart");
+}
+
+async function handleFiles(files){
+  const list = [...(files || [])];
+  if(!list.length) return;
+
+  FILE_DATA = [];
+  ALL_KEYS = [];
+
+  const debug = [];
+  let totalRows = 0;
+  let maxCols = 0;
+
+  $("debugBox").textContent = "讀取中...\n";
+
+  for(const f of list){
+    const text = await f.text();
+    const parsed = parse(text);
+    const start = parseStartEpoch(text);
+
+    debug.push(
+      `${f.name} rows=${parsed.rows.length} steps=${parsed.steps.length} header=${parsed.header.length}` +
+      `${start ? ` start=${epochToDateTime(start)}` : ""}`
+    );
+
+    if(parsed.header.length && parsed.rows.length){
+      parsed.header.forEach(k => {
+        if(k !== "Time" && !ALL_KEYS.includes(k)){
+          ALL_KEYS.push(k);
+        }
+      });
+
+      FILE_DATA.push({
+        name: f.name,
+        base: fileBaseName(f.name),
+        rows: parsed.rows,
+        steps: parsed.steps,
+        header: parsed.header,
+        start: start,
+        enabled: true
+      });
+
+      totalRows += parsed.rows.length;
+      maxCols = Math.max(maxCols, parsed.header.length);
+    }
+  }
+
+  $("debugBox").textContent = debug.join("\n");
+  $("stats").textContent = `Files=${FILE_DATA.length} | Rows=${totalRows} | Cols=${maxCols}`;
+
+  if(!FILE_DATA.length){
+    $("cursorBox").textContent = "No parsed data";
+    return;
+  }
+
+  ALL_KEYS.sort((a, b) => a.localeCompare(b));
+  buildFileList();
+  buildYList();
+
+  if(totalRows >= 4000){
+    $("sampleStep").value = 10;
+  }else if(totalRows >= 1200){
+    $("sampleStep").value = 5;
+  }else{
+    $("sampleStep").value = 3;
+  }
+
+  draw();
+}
 
 function draw(){
+  if(typeof Chart !== "function"){
+    $("debugBox").textContent = "❌ Chart.js 未載入，請確認 ./libs/chart.umd.min.js";
+    return;
+  }
 
-  if(!FILE_DATA.length) return;
+  const enabledFiles = FILE_DATA.filter(f => f.enabled);
+  if(!enabledFiles.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No file enabled";
+    return;
+  }
 
-  let keys=getY();
-  let datasets=[];
-  let colors=["red","blue","green","orange"];
+  let yKeys = getSelectedY();
 
-  let file=FILE_DATA[0];
+  // 若沒有勾 Y，則自動抓第一個數值欄位
+  if(!yKeys.length && enabledFiles[0] && enabledFiles[0].rows[0]){
+    const autoKey = Object.keys(enabledFiles[0].rows[0]).find(k => k !== "t");
+    if(autoKey) yKeys = [autoKey];
+  }
 
-  let steps=file.steps.map(s=>({x:s.t,name:s.name}));
+  if(!yKeys.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No Y key selected";
+    return;
+  }
 
-  FILE_DATA.forEach((f,i)=>{
+  const mode = $("xMode").value;
+  const fast = $("fastMode").checked;
+  const sampleStep = Math.max(1, Number($("sampleStep").value || 1));
 
-    let key=keys[0];
+  const colors = [
+    "#ff3b30","#0a84ff","#34c759","#ff9f0a",
+    "#64d2ff","#ffd60a","#bf5af2","#30d158",
+    "#60a5fa","#34d399","#f59e0b","#a78bfa",
+    "#ec4899","#22c55e","#ef4444","#14b8a6"
+  ];
 
-    let data=f.rows.map(r=>({
-      x:r.t,
-      y:r[key]
-    }));
+  const datasets = [];
+  let colorIdx = 0;
 
-    datasets.push({
-      label:f.name,
-      data:data,
-      parsing:false,
-      borderColor:colors[i%colors.length],
-      pointRadius:0
+  // 用第一個啟用檔案當 step 基準
+  const refFile = enabledFiles[0];
+  let overlaySteps = [];
+
+  if(refFile && refFile.steps && refFile.steps.length){
+    overlaySteps = refFile.steps.map(s => {
+      let x;
+      if(mode === "absolute" && refFile.start){
+        x = refFile.start + s.t;
+      }else{
+        x = s.t;
+      }
+      return { x, name: s.name };
     });
+  }
 
-  });
+  // 恢復原本功能：多檔 x 多 Y 欄位同時畫
+  for(let i = 0; i < enabledFiles.length; i++){
+    const file = enabledFiles[i];
+    const reduced = downsample(file.rows, sampleStep);
 
-  if(chart) chart.destroy();
+    for(let j = 0; j < yKeys.length; j++){
+      const key = yKeys[j];
+      const pts = [];
 
-  chart=new Chart(document.getElementById("chart"),{
+      for(const r of reduced){
+        const y = (typeof r[key] === "number") ? r[key] : null;
+        if(y === null) continue;
 
-    type:"line",
-    data:{datasets},
+        let x;
+        if(mode === "absolute" && file.start){
+          x = file.start + r.t;
+        }else{
+          x = r.t;
+        }
 
-    plugins:[stepTextPlugin],
+        pts.push({ x, y });
+      }
 
-    options:{
-      responsive:true,
+      if(!pts.length) continue;
 
-      layout:{
-        padding:{bottom:40}   // ✅ STEP空間
+      datasets.push({
+        label: `${file.base} | ${key}`,
+        _fileBase: file.base,
+        _key: key,
+        data: pts,
+        parsing: false,
+        borderColor: colors[(i * Math.max(1, yKeys.length) + j) % colors.length],
+        backgroundColor: colors[(i * Math.max(1, yKeys.length) + j) % colors.length],
+        borderWidth: 1.5,
+        pointRadius: fast ? 0 : 1,
+        pointHoverRadius: 3,
+        pointHitRadius: 10,
+        tension: 0.05,
+        spanGaps: true
+      });
+      colorIdx++;
+    }
+  }
+
+  if(!datasets.length){
+    if(chart){
+      chart.destroy();
+      chart = null;
+    }
+    $("cursorBox").textContent = "No drawable data";
+    return;
+  }
+
+  if(chart){
+    chart.destroy();
+    chart = null;
+  }
+
+  try{
+    if(window.ChartZoom){
+      Chart.register(window.ChartZoom);
+    }
+    if(window["chartjs-plugin-zoom"]){
+      Chart.register(window["chartjs-plugin-zoom"]);
+    }
+  }catch(e){
+    // ignore duplicate register
+  }
+
+  chart = new Chart(chartCanvas(), {
+    type: "line",
+    data: { datasets },
+    plugins: [stepTextPlugin],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: fast ? false : { duration: 220 },
+      normalized: true,
+
+      // 給 X 軸下方 Step 文字留空間
+      layout: {
+        padding: {
+          bottom: 40
+        }
       },
 
-      scales:{
-        x:{type:"linear"},
-        y:{type:"linear"}
+      interaction: {
+        mode: "nearest",
+        intersect: false
       },
 
-      plugins:{
-        stepTextPlugin:{steps:steps},
+      scales: {
+        x: {
+          type: "linear",
+          ticks: {
+            maxTicksLimit: fast ? 12 : 18,
+            callback: (v) => {
+              v = Number(v);
+              if(mode === "absolute"){
+                return epochToDateTime(v);
+              }
+              return secToHMS(v);
+            }
+          },
+          title: {
+            display: true,
+            text: mode === "absolute" ? "Absolute Time" : "Time (HH:MM:SS)"
+          }
+        },
+        y: {
+          type: "linear",
+          title: {
+            display: true,
+            text: "Value"
+          }
+        }
+      },
 
-        zoom:{
-          pan:{enabled:true,mode:"x"},
-          zoom:{
-            wheel:{enabled:true},
-            drag:{
-              enabled:true,
-              backgroundColor:'rgba(0,0,0,0.1)',
-              borderColor:'rgba(0,0,0,0.4)',
-              borderWidth:1
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            font: { size: 10 },
+            boxWidth: 14
+          }
+        },
+
+        tooltip: {
+          enabled: true,
+          mode: "nearest",
+          intersect: false
+        },
+
+        stepTextPlugin: {
+          enabled: $("showSteps").checked,
+          steps: overlaySteps,
+          minGap: Number($("stepGap").value || 70)
+        },
+
+        zoom: {
+          pan: {
+            enabled: true,
+            mode: "x",
+            modifierKey: "alt"
+          },
+          zoom: {
+            wheel: {
+              enabled: true
             },
-            mode:"x"
+            drag: {
+              enabled: true,
+              backgroundColor: "rgba(0,0,0,0.08)",
+              borderColor: "rgba(0,0,0,0.35)",
+              borderWidth: 1
+            },
+            pinch: {
+              enabled: true
+            },
+            mode: "x"
           }
         }
       }
     }
   });
+
+  attachCursorBox(mode);
+}
+
+function nearestPointByX(arr, x){
+  let lo = 0;
+  let hi = arr.length - 1;
+
+  while(lo < hi){
+    const mid = (lo + hi) >> 1;
+    if(arr[mid].x < x) lo = mid + 1;
+    else hi = mid;
+  }
+
+  let best = arr[lo];
+  if(lo > 0){
+    const prev = arr[lo - 1];
+    if(Math.abs(prev.x - x) < Math.abs(best.x - x)) best = prev;
+  }
+  return best;
+}
+
+function attachCursorBox(mode){
+  const box = $("cursorBox");
+  const canvas = $("chart");
+
+  canvas.onmousemove = (ev) => {
+    if(!chart) return;
+    const xScale = chart.scales.x;
+    if(!xScale) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const xVal = xScale.getValueForPixel(px);
+
+    const lines = [];
+    if(mode === "absolute"){
+      lines.push(`Time: ${epochToDateTime(xVal)}`);
+    }else{
+      lines.push(`Time: ${secToHMS(xVal)}`);
+    }
+
+    for(const ds of chart.data.datasets){
+      const arr = ds.data;
+      if(!arr || !arr.length) continue;
+
+      const p = nearestPointByX(arr, xVal);
+      if(p && Number.isFinite(p.y)){
+        lines.push(`${ds._fileBase} | ${ds._key}: ${p.y}`);
+      }
+    }
+
+    box.textContent = lines.slice(0, 24).join("\n");
+  };
+
+  canvas.onmouseleave = () => {
+    box.textContent = "Move mouse over chart...";
+  };
 }
 </script>
 </body>
